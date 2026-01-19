@@ -1,23 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
-import { Search, Settings, Users, Image, FileText, Link2, MoreVertical, Send, Copy, Download, Languages, Calendar, AlertCircle } from 'lucide-react'
-
-// Mock data
-const mockChats = [
-    { id: 1, title: 'Crypto Signals', type: 'channel', lastMessage: 'BTC looking bullish...', time: '12:30', unread: 5, photo: null },
-    { id: 2, title: 'Dev Community', type: 'supergroup', lastMessage: 'Anyone using Rust?', time: '11:45', unread: 0, photo: null },
-    { id: 3, title: 'John Doe', type: 'private', lastMessage: 'See you tomorrow!', time: '10:20', unread: 1, photo: null },
-    { id: 4, title: 'Trading Group', type: 'group', lastMessage: 'Market is crazy today', time: 'Yesterday', unread: 0, photo: null },
-    { id: 5, title: 'Tech News', type: 'channel', lastMessage: 'Breaking: New AI model...', time: 'Yesterday', unread: 12, photo: null },
-]
-
-const mockMessages = [
-    { id: 1, sender: 'Alice', text: 'Hey everyone! 👋', time: '10:30', isOwn: false },
-    { id: 2, sender: 'Bob', text: 'Hi Alice! How are you?', time: '10:31', isOwn: false },
-    { id: 3, sender: 'You', text: 'Good morning! Ready for the meeting?', time: '10:32', isOwn: true },
-    { id: 4, sender: 'Alice', text: 'Yes! I have some updates to share about the project progress.', time: '10:33', isOwn: false },
-    { id: 5, sender: 'Bob', text: 'Great, looking forward to it', time: '10:34', isOwn: false },
-]
+import { Search, Settings, Users, Image, FileText, Link2, MoreVertical, Send, Copy, Download, Languages, Calendar, AlertCircle, MessageSquare } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { cloneChat, exportChat, fetchChats, fetchMessages } from '../lib/api'
 
 const mockAccounts = [
     { id: 1, name: 'Main Account (@john_doe)' },
@@ -28,11 +13,77 @@ type RightPanelTab = 'members' | 'media' | 'files' | 'links' | 'settings' | 'exp
 
 export default function Chats() {
     const { chatId } = useParams()
-    const [selectedChatId, setSelectedChatId] = useState<number>(chatId ? Number(chatId) : 1)
+    const [selectedChatId, setSelectedChatId] = useState<number | null>(chatId ? Number(chatId) : null)
     const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('members')
     const [showRightPanel, setShowRightPanel] = useState(true)
+    const [isSubmitting, setIsSubmitting] = useState(false)
 
-    const selectedChat = mockChats.find(c => c.id === selectedChatId)
+    // Clone Form State
+    const [cloneForm, setCloneForm] = useState({
+        target_account_id: 1,
+        destination_chat: '',
+        from_date: null,
+        to_date: null,
+        include_media: true,
+        preserve_formatting: true,
+        rewrite_persona: null
+    })
+
+    // Export Form State
+    const [exportForm, setExportForm] = useState({
+        format: 'json',
+        keywords: '',
+        from_id: null,
+        min_views: null,
+        include_media: true
+    })
+
+
+    const { data: chats = [], isLoading: isLoadingChats } = useQuery({
+        queryKey: ['chats'],
+        queryFn: fetchChats,
+    })
+
+    // Auto-select first chat when chats load and none is selected
+    useEffect(() => {
+        if (!selectedChatId && chats.length > 0) {
+            setSelectedChatId(chats[0].id)
+        }
+    }, [chats, selectedChatId])
+
+    const { data: messages = [], isLoading: isLoadingMessages } = useQuery({
+        queryKey: ['chats', selectedChatId, 'messages'],
+        queryFn: () => fetchMessages(selectedChatId!),
+        enabled: !!selectedChatId,
+    })
+
+    const startClone = async () => {
+        if (!selectedChatId) return
+        setIsSubmitting(true)
+        try {
+            const result = await cloneChat(selectedChatId, cloneForm)
+            alert(result.message || 'Cloning task started successfully!')
+        } catch (err: any) {
+            alert('Failed to start cloning: ' + err.message)
+        } finally {
+            setIsSubmitting(false)
+        }
+    }
+
+    const startExport = async () => {
+        if (!selectedChatId) return
+        setIsSubmitting(true)
+        try {
+            const result = await exportChat(selectedChatId, exportForm)
+            alert(result.message || 'Export task generated successfully!')
+        } catch (err: any) {
+            alert('Failed to start export: ' + err.message)
+        } finally {
+            setIsSubmitting(false)
+        }
+    }
+
+    const selectedChat = chats.find((c: any) => c.id === selectedChatId)
 
     return (
         <div className="flex h-full">
@@ -52,19 +103,25 @@ export default function Chats() {
 
                 {/* Chat List */}
                 <div className="flex-1 overflow-y-auto">
-                    {mockChats.map((chat) => (
+                    {isLoadingChats && (
+                        <div className="flex flex-col items-center justify-center h-full gap-3 py-10 opacity-50">
+                            <div className="w-6 h-6 border-2 border-[var(--color-accent)] border-t-transparent rounded-full animate-spin" />
+                            <span className="text-xs font-medium">Loading Dialogs...</span>
+                        </div>
+                    )}
+                    {chats.map((chat: any) => (
                         <button
                             key={chat.id}
                             onClick={() => setSelectedChatId(chat.id)}
                             className={`w-full p-3 flex items-center gap-3 transition-colors ${chat.id === selectedChatId
-                                    ? 'bg-[var(--color-accent-subtle)]'
-                                    : 'hover:bg-[var(--color-bg-hover)]'
+                                ? 'bg-[var(--color-accent-subtle)]'
+                                : 'hover:bg-[var(--color-bg-hover)]'
                                 }`}
                         >
                             {/* Avatar */}
                             <div className="w-10 h-10 rounded-full bg-[var(--color-accent-dim)] flex items-center justify-center flex-shrink-0">
                                 <span className="text-[var(--color-accent)] font-medium text-sm">
-                                    {chat.title.charAt(0)}
+                                    {(chat.title || '?').charAt(0)}
                                 </span>
                             </div>
 
@@ -72,17 +129,19 @@ export default function Chats() {
                             <div className="flex-1 min-w-0 text-left">
                                 <div className="flex items-center justify-between">
                                     <span className="text-sm font-medium text-[var(--color-text-primary)] truncate">
-                                        {chat.title}
+                                        {chat.title || 'Unknown Chat'}
                                     </span>
-                                    <span className="text-xs text-[var(--color-text-muted)]">{chat.time}</span>
+                                    <span className="text-[10px] text-[var(--color-text-muted)]">
+                                        {chat.last_message_date ? new Date(chat.last_message_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                                    </span>
                                 </div>
                                 <div className="flex items-center justify-between mt-0.5">
                                     <span className="text-xs text-[var(--color-text-secondary)] truncate">
-                                        {chat.lastMessage}
+                                        {chat.last_message}
                                     </span>
-                                    {chat.unread > 0 && (
+                                    {chat.unread_count > 0 && (
                                         <span className="ml-2 px-1.5 py-0.5 rounded-full bg-[var(--color-accent)] text-white text-xs min-w-[18px] text-center">
-                                            {chat.unread}
+                                            {chat.unread_count}
                                         </span>
                                     )}
                                 </div>
@@ -99,15 +158,15 @@ export default function Chats() {
                     <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-full bg-[var(--color-accent-dim)] flex items-center justify-center">
                             <span className="text-[var(--color-accent)] font-medium text-sm">
-                                {selectedChat?.title.charAt(0)}
+                                {(selectedChat?.title || '?').charAt(0)}
                             </span>
                         </div>
                         <div>
                             <div className="text-sm font-medium text-[var(--color-text-primary)]">
-                                {selectedChat?.title}
+                                {selectedChat?.title || 'Select a chat'}
                             </div>
                             <div className="text-xs text-[var(--color-text-muted)]">
-                                {selectedChat?.type} • 1,234 members
+                                {selectedChat ? `${selectedChat.chat_type} • ${selectedChat.member_count || 0} members` : ''}
                             </div>
                         </div>
                     </div>
@@ -134,8 +193,8 @@ export default function Chats() {
                         <button
                             onClick={() => setShowRightPanel(!showRightPanel)}
                             className={`p-2 rounded-md transition-colors ${showRightPanel
-                                    ? 'bg-[var(--color-accent-subtle)] text-[var(--color-accent)]'
-                                    : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]'
+                                ? 'bg-[var(--color-accent-subtle)] text-[var(--color-accent)]'
+                                : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]'
                                 }`}
                         >
                             <Users className="w-5 h-5" />
@@ -148,25 +207,37 @@ export default function Chats() {
 
                 {/* Messages Area */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                    {mockMessages.map((msg) => (
+                    {isLoadingMessages && (
+                        <div className="flex flex-col items-center justify-center h-full gap-2 opacity-50">
+                            <MessageSquare className="w-8 h-8 text-[var(--color-accent)] animate-pulse" />
+                            <span className="text-xs font-semibold uppercase tracking-widest">Hydrating History</span>
+                        </div>
+                    )}
+                    {!isLoadingMessages && messages.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-full opacity-20">
+                            <MessageSquare className="w-16 h-16 mb-2" />
+                            <span className="text-sm font-bold">No messages found</span>
+                        </div>
+                    )}
+                    {messages.map((msg: any) => (
                         <div
                             key={msg.id}
-                            className={`flex ${msg.isOwn ? 'justify-end' : 'justify-start'}`}
+                            className={`flex ${msg.is_outgoing ? 'justify-end' : 'justify-start'}`}
                         >
                             <div
-                                className={`max-w-[70%] px-3 py-2 rounded-lg ${msg.isOwn
-                                        ? 'bg-[var(--color-accent)] text-white'
-                                        : 'bg-[var(--color-bg-panel)] border border-[var(--color-border)]'
+                                className={`max-w-[70%] px-3 py-2 rounded-lg ${msg.is_outgoing
+                                    ? 'bg-[var(--color-accent)] text-white shadow-md'
+                                    : 'bg-[var(--color-bg-panel)] border border-[var(--color-border)] shadow-sm'
                                     }`}
                             >
-                                {!msg.isOwn && (
-                                    <div className="text-xs font-medium text-[var(--color-accent)] mb-1">
-                                        {msg.sender}
+                                {!msg.is_outgoing && (
+                                    <div className="text-[10px] font-bold text-[var(--color-accent)] mb-1 uppercase tracking-tight">
+                                        {msg.sender_name || 'User'}
                                     </div>
                                 )}
-                                <div className="text-sm">{msg.text}</div>
-                                <div className={`text-xs mt-1 ${msg.isOwn ? 'text-white/70' : 'text-[var(--color-text-muted)]'}`}>
-                                    {msg.time}
+                                <div className="text-sm leading-relaxed">{msg.text}</div>
+                                <div className={`text-[10px] mt-1.5 ${msg.is_outgoing ? 'text-white/70' : 'text-[var(--color-text-muted)]'}`}>
+                                    {new Date(msg.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                 </div>
                             </div>
                         </div>
@@ -203,8 +274,8 @@ export default function Chats() {
                                 key={tab.id}
                                 onClick={() => setRightPanelTab(tab.id as RightPanelTab)}
                                 className={`flex-shrink-0 px-4 py-3 flex items-center justify-center transition-colors ${rightPanelTab === tab.id
-                                        ? 'text-[var(--color-accent)] border-b-2 border-[var(--color-accent)]'
-                                        : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]'
+                                    ? 'text-[var(--color-accent)] border-b-2 border-[var(--color-accent)]'
+                                    : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]'
                                     }`}
                                 title={tab.label}
                             >
@@ -261,7 +332,11 @@ export default function Chats() {
                                 <div className="space-y-3">
                                     <div>
                                         <label className="text-xs text-[var(--color-text-secondary)] font-medium">Target Account</label>
-                                        <select className="w-full mt-1 px-3 py-2 rounded-md bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]">
+                                        <select
+                                            value={cloneForm.target_account_id}
+                                            onChange={(e) => setCloneForm({ ...cloneForm, target_account_id: parseInt(e.target.value) })}
+                                            className="w-full mt-1 px-3 py-2 rounded-md bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]"
+                                        >
                                             {mockAccounts.map(acc => (
                                                 <option key={acc.id} value={acc.id}>{acc.name}</option>
                                             ))}
@@ -273,6 +348,8 @@ export default function Chats() {
                                         <input
                                             type="text"
                                             placeholder="@channel_username or link"
+                                            value={cloneForm.destination_chat}
+                                            onChange={(e) => setCloneForm({ ...cloneForm, destination_chat: e.target.value })}
                                             className="w-full mt-1 px-3 py-2 rounded-md bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]"
                                         />
                                     </div>
@@ -294,23 +371,33 @@ export default function Chats() {
                                     <div>
                                         <label className="text-xs text-[var(--color-text-secondary)] font-medium">Message Settings</label>
                                         <div className="mt-1 space-y-2">
-                                            <label className="flex items-center gap-2 text-sm text-[var(--color-text-primary)]">
-                                                <input type="checkbox" defaultChecked className="rounded border-[var(--color-border)]" />
+                                            <label className="flex items-center gap-2 text-sm text-[var(--color-text-primary)] cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={cloneForm.include_media}
+                                                    onChange={(e) => setCloneForm({ ...cloneForm, include_media: e.target.checked })}
+                                                    className="rounded border-[var(--color-border)]"
+                                                />
                                                 Include Media
                                             </label>
-                                            <label className="flex items-center gap-2 text-sm text-[var(--color-text-primary)]">
-                                                <input type="checkbox" defaultChecked className="rounded border-[var(--color-border)]" />
+                                            <label className="flex items-center gap-2 text-sm text-[var(--color-text-primary)] cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={cloneForm.preserve_formatting}
+                                                    onChange={(e) => setCloneForm({ ...cloneForm, preserve_formatting: e.target.checked })}
+                                                    className="rounded border-[var(--color-border)]"
+                                                />
                                                 Preserve Formatting
-                                            </label>
-                                            <label className="flex items-center gap-2 text-sm text-[var(--color-text-primary)]">
-                                                <input type="checkbox" className="rounded border-[var(--color-border)]" />
-                                                Rewrite with LLM (Persona)
                                             </label>
                                         </div>
                                     </div>
 
-                                    <button className="w-full flex items-center justify-center gap-2 px-4 py-2 mt-4 rounded-md bg-[var(--color-accent)] text-white text-sm font-medium hover:bg-[var(--color-accent-hover)] transition-all">
-                                        Start Cloning Process
+                                    <button
+                                        onClick={startClone}
+                                        disabled={isSubmitting || !cloneForm.destination_chat}
+                                        className="w-full flex items-center justify-center gap-2 px-4 py-2 mt-4 rounded-md bg-[var(--color-accent)] text-white text-sm font-medium hover:bg-[var(--color-accent-hover)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {isSubmitting ? 'Initializing...' : 'Start Cloning Process'}
                                     </button>
                                 </div>
                             </div>
@@ -326,7 +413,11 @@ export default function Chats() {
                                 <div className="space-y-3">
                                     <div>
                                         <label className="text-xs text-[var(--color-text-secondary)] font-medium">Output Format</label>
-                                        <select className="w-full mt-1 px-3 py-2 rounded-md bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]">
+                                        <select
+                                            value={exportForm.format}
+                                            onChange={(e) => setExportForm({ ...exportForm, format: e.target.value })}
+                                            className="w-full mt-1 px-3 py-2 rounded-md bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]"
+                                        >
                                             <option value="json">JSON (Data Analysis)</option>
                                             <option value="html">HTML (Beautiful Report)</option>
                                             <option value="txt">TXT (Clean Text)</option>
@@ -375,9 +466,13 @@ export default function Chats() {
                                         </div>
                                     </div>
 
-                                    <button className="w-full flex items-center justify-center gap-2 px-4 py-2 mt-4 rounded-md bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-hover)] transition-all">
+                                    <button
+                                        onClick={startExport}
+                                        disabled={isSubmitting}
+                                        className="w-full flex items-center justify-center gap-2 px-4 py-2 mt-4 rounded-md bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-hover)] transition-all disabled:opacity-50"
+                                    >
                                         <Download className="w-4 h-4" />
-                                        Generate Export Task
+                                        {isSubmitting ? 'Preparing Data...' : 'Generate Export Task'}
                                     </button>
                                 </div>
                             </div>

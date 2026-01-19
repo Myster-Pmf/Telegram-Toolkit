@@ -61,8 +61,8 @@ class Media(Base):
     is_downloaded: Mapped[bool] = mapped_column(Boolean, default=False)
     download_error: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     
-    # Additional metadata
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # Additional metadata (named extra_data to avoid conflict with SQLAlchemy's reserved 'metadata')
+    extra_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(

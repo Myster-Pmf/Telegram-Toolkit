@@ -9,6 +9,7 @@ import Settings from './pages/Settings'
 import Automation from './pages/Automation'
 import RawCommands from './pages/RawCommands'
 import GlobalSearch from './pages/GlobalSearch'
+import Auth from './pages/Auth'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -25,6 +26,10 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <Routes>
+          {/* Auth page - standalone, no layout */}
+          <Route path="/auth" element={<Auth />} />
+
+          {/* Main app with layout */}
           <Route path="/" element={<Layout />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />

@@ -47,8 +47,8 @@ class Event(Base):
     old_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     new_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
-    # Additional context
-    metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # Additional context (named extra_data to avoid SQLAlchemy reserved 'metadata')
+    extra_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     
     # Which session observed this
     session_id: Mapped[Optional[int]] = mapped_column(

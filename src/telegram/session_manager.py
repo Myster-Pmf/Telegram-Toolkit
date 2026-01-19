@@ -158,12 +158,39 @@ class SessionManager:
         Returns:
             CodeRequest with phone_code_hash needed for verification
         """
+        import asyncio
+        
+        print(f"📞 [SESSION] Creating new client for phone: {phone}")
         # Create a temporary client
         client = get_client()
-        await client.connect()
         
-        # Request code
-        phone_code_hash = await client.send_code_request(phone)
+        try:
+            print(f"📞 [SESSION] Connecting to Telegram servers (timeout: 30s)...")
+            # Add timeout to connection
+            await asyncio.wait_for(client.connect(), timeout=30.0)
+            print(f"📞 [SESSION] Connected! Sending code request...")
+            
+            # Request code with timeout
+            phone_code_hash = await asyncio.wait_for(
+                client.send_code_request(phone), 
+                timeout=30.0
+            )
+            print(f"📞 [SESSION] Code sent! Hash: {phone_code_hash[:10]}...")
+            
+        except asyncio.TimeoutError:
+            print(f"❌ [SESSION] Timeout connecting to Telegram servers")
+            try:
+                await client.disconnect()
+            except:
+                pass
+            raise ValueError("Connection to Telegram timed out. Check your network or try again.")
+        except Exception as e:
+            print(f"❌ [SESSION] Error: {e}")
+            try:
+                await client.disconnect()
+            except:
+                pass
+            raise
         
         # Store pending auth state
         self._pending_auth[phone] = {
@@ -338,6 +365,21 @@ class SessionManager:
         """
         if session_id is None:
             session_id = self._active_session_id
+        
+        # If still None, try to get the most recently used session from DB
+        if session_id is None:
+            async with get_db() as db:
+                result = await db.execute(
+                    select(SessionModel)
+                    .where(SessionModel.is_active == True)
+                    .order_by(SessionModel.last_used_at.desc())
+                    .limit(1)
+                )
+                session = result.scalar_one_or_none()
+                if session:
+                    session_id = session.id
+                    self._active_session_id = session_id
+                    print(f"📌 [SESSION] Auto-selected session {session_id} ({session.name})")
         
         if session_id is None:
             raise ValueError("No active session. Connect to an account first.")

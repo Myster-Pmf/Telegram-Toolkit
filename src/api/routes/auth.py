@@ -81,19 +81,26 @@ async def request_code(request: RequestCodeRequest):
     
     Send a verification code to the provided phone number.
     """
+    print(f"📱 [AUTH] Request code for phone: {request.phone}")
     try:
+        print(f"📱 [AUTH] Calling session_manager.request_code...")
         code_request = await session_manager.request_code(
             phone=request.phone,
             name=request.name,
         )
+        print(f"📱 [AUTH] Code sent successfully!")
         return RequestCodeResponse(
             success=True,
             phone=code_request.phone,
             message="Verification code sent to your Telegram app",
         )
     except ValueError as e:
+        print(f"❌ [AUTH] ValueError: {e}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        print(f"❌ [AUTH] Exception: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to send code: {str(e)}")
 
 
