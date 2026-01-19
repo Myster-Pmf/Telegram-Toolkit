@@ -4,7 +4,7 @@ Chats Routes
 Access and manage Telegram chats, groups, and channels.
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
@@ -33,6 +33,26 @@ class MessageResponse(BaseModel):
     reply_to_msg_id: Optional[int]
     has_media: bool
     media_type: Optional[str]
+
+
+class CloneChatRequest(BaseModel):
+    """Request to clone a chat's content."""
+    target_account_id: int
+    destination_chat: str
+    from_date: Optional[datetime] = None
+    to_date: Optional[datetime] = None
+    include_media: bool = True
+    preserve_formatting: bool = True
+    rewrite_persona: Optional[str] = None
+
+
+class ExportChatRequest(BaseModel):
+    """Request to export a chat's content."""
+    format: str = "json"  # json, html, txt, csv
+    keywords: Optional[str] = None
+    from_id: Optional[int] = None
+    min_views: Optional[int] = None
+    include_media: bool = True
 
 
 @router.get("/", response_model=List[ChatResponse])
@@ -131,3 +151,40 @@ async def get_messages(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get messages: {str(e)}")
+
+
+@router.post("/{chat_id}/clone")
+async def clone_chat(
+    chat_id: int,
+    request: CloneChatRequest,
+    background_tasks: BackgroundTasks,
+    session_id: Optional[int] = None,
+):
+    """
+    Start a background task to clone a chat or channel.
+    """
+    # TODO: Verify source and destination
+    # TODO: Start cloning background task
+    return {
+        "success": True, 
+        "message": "Cloning task started",
+        "task_id": f"clone_{chat_id}_{datetime.now().timestamp()}"
+    }
+
+
+@router.post("/{chat_id}/export")
+async def export_chat(
+    chat_id: int,
+    request: ExportChatRequest,
+    background_tasks: BackgroundTasks,
+    session_id: Optional[int] = None,
+):
+    """
+    Start a background task to selectively export chat content.
+    """
+    # TODO: Start export background task that results in an Archive entry
+    return {
+        "success": True,
+        "message": "Export task started",
+        "task_id": f"export_{chat_id}_{datetime.now().timestamp()}"
+    }

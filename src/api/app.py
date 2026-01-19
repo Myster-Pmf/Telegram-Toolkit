@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from src.core.config import settings
-from src.api.routes import auth, sessions, chats, users, analytics
+from src.api.routes import auth, sessions, chats, users, analytics, archives
 
 
 def create_app() -> FastAPI:
@@ -39,6 +39,7 @@ def create_app() -> FastAPI:
     app.include_router(chats.router, prefix="/api/chats", tags=["Chats"])
     app.include_router(users.router, prefix="/api/users", tags=["Users"])
     app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
+    app.include_router(archives.router, prefix="/api/archives", tags=["Archives"])
     
     # Health check
     @app.get("/api/health")
