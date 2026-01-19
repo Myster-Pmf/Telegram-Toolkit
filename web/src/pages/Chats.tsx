@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Search, Settings, Users, Image, FileText, Link2, MoreVertical, Send } from 'lucide-react'
+import { Search, Settings, Users, Image, FileText, Link2, MoreVertical, Send, Copy, Download, Languages, Calendar, AlertCircle } from 'lucide-react'
 
 // Mock data
 const mockChats = [
@@ -19,7 +19,12 @@ const mockMessages = [
     { id: 5, sender: 'Bob', text: 'Great, looking forward to it', time: '10:34', isOwn: false },
 ]
 
-type RightPanelTab = 'members' | 'media' | 'files' | 'links' | 'settings'
+const mockAccounts = [
+    { id: 1, name: 'Main Account (@john_doe)' },
+    { id: 2, name: 'Work Account (@john_work)' },
+]
+
+type RightPanelTab = 'members' | 'media' | 'files' | 'links' | 'settings' | 'export' | 'clone'
 
 export default function Chats() {
     const { chatId } = useParams()
@@ -108,6 +113,24 @@ export default function Chats() {
                     </div>
 
                     <div className="flex items-center gap-2">
+                        {/* Quick Actions in Header */}
+                        <button
+                            onClick={() => { setShowRightPanel(true); setRightPanelTab('clone'); }}
+                            className="p-2 rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+                            title="Clone Channel"
+                        >
+                            <Copy className="w-5 h-5" />
+                        </button>
+                        <button
+                            onClick={() => { setShowRightPanel(true); setRightPanelTab('export'); }}
+                            className="p-2 rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+                            title="Export Chat"
+                        >
+                            <Download className="w-5 h-5" />
+                        </button>
+
+                        <div className="w-px h-6 bg-[var(--color-border)] mx-1" />
+
                         <button
                             onClick={() => setShowRightPanel(!showRightPanel)}
                             className={`p-2 rounded-md transition-colors ${showRightPanel
@@ -169,18 +192,17 @@ export default function Chats() {
             {showRightPanel && (
                 <div className="w-80 flex flex-col border-l border-[var(--color-border)] bg-[var(--color-bg-panel)]">
                     {/* Tabs */}
-                    <div className="flex border-b border-[var(--color-border)]">
+                    <div className="flex border-b border-[var(--color-border)] overflow-x-auto no-scrollbar">
                         {[
                             { id: 'members', icon: Users, label: 'Members' },
                             { id: 'media', icon: Image, label: 'Media' },
                             { id: 'files', icon: FileText, label: 'Files' },
-                            { id: 'links', icon: Link2, label: 'Links' },
                             { id: 'settings', icon: Settings, label: 'Settings' },
                         ].map((tab) => (
                             <button
                                 key={tab.id}
                                 onClick={() => setRightPanelTab(tab.id as RightPanelTab)}
-                                className={`flex-1 py-3 flex items-center justify-center transition-colors ${rightPanelTab === tab.id
+                                className={`flex-shrink-0 px-4 py-3 flex items-center justify-center transition-colors ${rightPanelTab === tab.id
                                         ? 'text-[var(--color-accent)] border-b-2 border-[var(--color-accent)]'
                                         : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]'
                                     }`}
@@ -222,21 +244,188 @@ export default function Chats() {
                             </div>
                         )}
 
-                        {rightPanelTab === 'settings' && (
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="flex items-center justify-between">
-                                        <span className="text-sm text-[var(--color-text-primary)]">Monitor this chat</span>
-                                        <input type="checkbox" className="rounded" defaultChecked />
-                                    </label>
-                                    <p className="text-xs text-[var(--color-text-muted)] mt-1">
-                                        Track messages, edits, and deletions
+                        {rightPanelTab === 'clone' && (
+                            <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-200">
+                                <h3 className="text-sm font-semibold text-[var(--color-text-primary)] flex items-center gap-2">
+                                    <Copy className="w-4 h-4 text-[var(--color-accent)]" />
+                                    Channel Cloner
+                                </h3>
+
+                                <div className="p-3 rounded-md bg-[var(--color-bg-elevated)] border border-[var(--color-border)] flex items-start gap-2">
+                                    <AlertCircle className="w-4 h-4 text-[var(--color-warning)] flex-shrink-0 mt-0.5" />
+                                    <p className="text-[10px] text-[var(--color-text-secondary)] leading-tight">
+                                        Clone messages and sentiment from this channel to another. Supports cross-account destination.
                                     </p>
                                 </div>
-                                <div>
-                                    <label className="flex items-center justify-between">
-                                        <span className="text-sm text-[var(--color-text-primary)]">Auto-download media</span>
-                                        <input type="checkbox" className="rounded" />
+
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="text-xs text-[var(--color-text-secondary)] font-medium">Target Account</label>
+                                        <select className="w-full mt-1 px-3 py-2 rounded-md bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]">
+                                            {mockAccounts.map(acc => (
+                                                <option key={acc.id} value={acc.id}>{acc.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs text-[var(--color-text-secondary)] font-medium">Destination Channel</label>
+                                        <input
+                                            type="text"
+                                            placeholder="@channel_username or link"
+                                            className="w-full mt-1 px-3 py-2 rounded-md bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs text-[var(--color-text-secondary)] font-medium">Content Range</label>
+                                        <div className="grid grid-cols-2 gap-2 mt-1">
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] text-[var(--color-text-muted)] uppercase">From Date</label>
+                                                <input type="date" className="w-full px-2 py-1.5 rounded bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-xs text-[var(--color-text-primary)]" />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] text-[var(--color-text-muted)] uppercase">To Date</label>
+                                                <input type="date" className="w-full px-2 py-1.5 rounded bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-xs text-[var(--color-text-primary)]" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs text-[var(--color-text-secondary)] font-medium">Message Settings</label>
+                                        <div className="mt-1 space-y-2">
+                                            <label className="flex items-center gap-2 text-sm text-[var(--color-text-primary)]">
+                                                <input type="checkbox" defaultChecked className="rounded border-[var(--color-border)]" />
+                                                Include Media
+                                            </label>
+                                            <label className="flex items-center gap-2 text-sm text-[var(--color-text-primary)]">
+                                                <input type="checkbox" defaultChecked className="rounded border-[var(--color-border)]" />
+                                                Preserve Formatting
+                                            </label>
+                                            <label className="flex items-center gap-2 text-sm text-[var(--color-text-primary)]">
+                                                <input type="checkbox" className="rounded border-[var(--color-border)]" />
+                                                Rewrite with LLM (Persona)
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <button className="w-full flex items-center justify-center gap-2 px-4 py-2 mt-4 rounded-md bg-[var(--color-accent)] text-white text-sm font-medium hover:bg-[var(--color-accent-hover)] transition-all">
+                                        Start Cloning Process
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {rightPanelTab === 'export' && (
+                            <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-200">
+                                <h3 className="text-sm font-semibold text-[var(--color-text-primary)] flex items-center gap-2">
+                                    <Download className="w-4 h-4 text-[var(--color-accent)]" />
+                                    Selective Exporter
+                                </h3>
+
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="text-xs text-[var(--color-text-secondary)] font-medium">Output Format</label>
+                                        <select className="w-full mt-1 px-3 py-2 rounded-md bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]">
+                                            <option value="json">JSON (Data Analysis)</option>
+                                            <option value="html">HTML (Beautiful Report)</option>
+                                            <option value="txt">TXT (Clean Text)</option>
+                                            <option value="csv">CSV (Spreadsheet)</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs text-[var(--color-text-secondary)] font-medium">Advanced Filters</label>
+                                        <div className="mt-1 space-y-2">
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] text-[var(--color-text-muted)] uppercase">Keywords</label>
+                                                <input type="text" placeholder="Split by comma..." className="w-full px-3 py-2 rounded bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-xs text-[var(--color-text-primary)]" />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2 mt-1">
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] text-[var(--color-text-muted)] uppercase">From ID</label>
+                                                    <input type="number" placeholder="Msg ID" className="w-full px-2 py-1.5 rounded bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-xs text-[var(--color-text-primary)]" />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] text-[var(--color-text-muted)] uppercase">Min Views</label>
+                                                    <input type="number" placeholder="0" className="w-full px-2 py-1.5 rounded bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-xs text-[var(--color-text-primary)]" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs text-[var(--color-text-secondary)] font-medium">Media Extraction</label>
+                                        <div className="mt-1 space-y-2">
+                                            <label className="flex items-center gap-2 text-sm text-[var(--color-text-primary)]">
+                                                <input type="checkbox" defaultChecked className="rounded border-[var(--color-border)]" />
+                                                Download all media
+                                            </label>
+                                            <label className="flex items-center gap-2 text-sm text-[var(--color-text-primary)]">
+                                                <input type="checkbox" className="rounded border-[var(--color-border)]" />
+                                                Export only media links
+                                            </label>
+                                            <div className="flex flex-wrap gap-2 mt-1">
+                                                {['Photo', 'Video', 'File', 'Link'].map(t => (
+                                                    <span key={t} className="px-2 py-0.5 rounded bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-[10px] text-[var(--color-text-secondary)]">
+                                                        {t}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <button className="w-full flex items-center justify-center gap-2 px-4 py-2 mt-4 rounded-md bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-[var(--color-text-primary)] text-sm font-medium hover:bg-[var(--color-bg-hover)] transition-all">
+                                        <Download className="w-4 h-4" />
+                                        Generate Export Task
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {rightPanelTab === 'settings' && (
+                            <div className="space-y-5">
+                                {/* Translation Settings */}
+                                <div className="p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elevated)]/30">
+                                    <h3 className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-2 flex items-center gap-2">
+                                        <Languages className="w-3 h-3" />
+                                        Real-time Translation
+                                    </h3>
+                                    <label className="flex items-center justify-between p-2 rounded-md hover:bg-[var(--color-bg-hover)] cursor-pointer">
+                                        <span className="text-sm text-[var(--color-text-primary)]">Enable Auto-Translate</span>
+                                        <input type="checkbox" className="rounded border-[var(--color-border)]" />
+                                    </label>
+                                    <div className="mt-2 pl-2">
+                                        <label className="block text-xs text-[var(--color-text-secondary)] mb-1">Target Language</label>
+                                        <select className="w-full px-2 py-1.5 rounded bg-[var(--color-bg-panel)] border border-[var(--color-border)] text-xs text-[var(--color-text-primary)]">
+                                            <option>English (US)</option>
+                                            <option>Spanish (ES)</option>
+                                            <option>Russian (RU)</option>
+                                            <option>Chinese (Simplified)</option>
+                                            <option>German (DE)</option>
+                                        </select>
+                                    </div>
+                                    <p className="px-2 mt-2 text-[10px] text-[var(--color-text-muted)] italic">
+                                        Uses configured LLM provider for high-accuracy translation.
+                                    </p>
+                                </div>
+
+                                <div className="pt-2">
+                                    <h3 className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-2 flex items-center gap-2">
+                                        <Settings className="w-3 h-3" />
+                                        Monitoring Logic
+                                    </h3>
+                                    <label className="flex items-center justify-between p-2 rounded-md hover:bg-[var(--color-bg-hover)] cursor-pointer">
+                                        <span className="text-sm text-[var(--color-text-primary)]">Track Edits & Deletions</span>
+                                        <input type="checkbox" className="rounded border-[var(--color-border)]" defaultChecked />
+                                    </label>
+                                    <label className="flex items-center justify-between p-2 rounded-md hover:bg-[var(--color-bg-hover)] cursor-pointer">
+                                        <span className="text-sm text-[var(--color-text-primary)]">Automated Media Save</span>
+                                        <input type="checkbox" className="rounded border-[var(--color-border)]" />
+                                    </label>
+                                    <label className="flex items-center justify-between p-2 rounded-md hover:bg-[var(--color-bg-hover)] cursor-pointer">
+                                        <span className="text-sm text-[var(--color-text-primary)]">Log Profile Changes</span>
+                                        <input type="checkbox" className="rounded border-[var(--color-border)]" defaultChecked />
                                     </label>
                                 </div>
                             </div>

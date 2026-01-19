@@ -6,6 +6,9 @@ import Chats from './pages/Chats'
 import Users from './pages/Users'
 import Archives from './pages/Archives'
 import Settings from './pages/Settings'
+import Automation from './pages/Automation'
+import RawCommands from './pages/RawCommands'
+import GlobalSearch from './pages/GlobalSearch'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -30,6 +33,9 @@ function App() {
             <Route path="users" element={<Users />} />
             <Route path="users/:userId" element={<Users />} />
             <Route path="archives" element={<Archives />} />
+            <Route path="automation" element={<Automation />} />
+            <Route path="commands" element={<RawCommands />} />
+            <Route path="search" element={<GlobalSearch />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>
@@ -38,4 +44,6 @@ function App() {
   )
 }
 
-export default App
+export default function Root() {
+  return <App />
+}
