@@ -62,6 +62,9 @@ class Settings(BaseSettings):
         default="https://api.openai.com/v1", alias="LLM_ENDPOINT"
     )
     llm_model: str = Field(default="gemini-2.0-flash", alias="LLM_MODEL")
+    translation_target_language: str = Field(
+        default="English", alias="TRANSLATION_TARGET_LANGUAGE"
+    )
     
     # Web Server
     host: str = Field(default="127.0.0.1", alias="HOST")

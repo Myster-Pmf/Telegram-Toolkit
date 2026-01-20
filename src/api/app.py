@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.core.config import settings
 from src.core.database import init_database
-from src.api.routes import auth, sessions, chats, users, analytics, archives
+from src.api.routes import auth, sessions, chats, users, analytics, archives, media, websocket, llm
 
 
 @asynccontextmanager
@@ -56,6 +56,18 @@ def create_app() -> FastAPI:
     application.include_router(users.router, prefix="/api/users", tags=["Users"])
     application.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
     application.include_router(archives.router, prefix="/api/archives", tags=["Archives"])
+    application.include_router(media.router, prefix="/api/media", tags=["Media"])
+    application.include_router(llm.router, prefix="/api/llm", tags=["LLM"])
+    application.include_router(websocket.router, prefix="/ws", tags=["WebSocket"])
+    
+    # Static files
+    from fastapi.staticfiles import StaticFiles
+    import os
+    
+    if not os.path.exists(settings.media_dir):
+        os.makedirs(settings.media_dir)
+        
+    application.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
     
     # Health check
     @application.get("/api/health")

@@ -167,3 +167,64 @@ export async function exportSession(sessionId: number): Promise<string> {
     const data = await response.json();
     return data.session_string;
 }
+
+
+// QR Code Login Types
+export interface QRGenerateResponse {
+    token: string;
+    url: string;
+}
+
+export interface QRStatusResponse {
+    status: 'pending' | 'scanned' | 'success' | 'expired' | 'error';
+    session?: SessionInfo;
+    message?: string;
+}
+
+/**
+ * Generate a QR code login token
+ */
+export async function generateQR(): Promise<QRGenerateResponse> {
+    const response = await fetch(`${API_BASE}/qr/generate`, {
+        method: 'POST',
+    });
+
+    if (!response.ok) {
+        const error: ApiError = await response.json();
+        throw new Error(typeof error.detail === 'string' ? error.detail : error.detail.message);
+    }
+
+    return response.json();
+}
+
+/**
+ * Poll QR code login status
+ */
+export async function pollQRStatus(token: string): Promise<QRStatusResponse> {
+    const response = await fetch(`${API_BASE}/qr/status/${token}`);
+
+    if (!response.ok) {
+        const error: ApiError = await response.json();
+        throw new Error(typeof error.detail === 'string' ? error.detail : error.detail.message);
+    }
+
+    return response.json();
+}
+
+/**
+ * Import a session file (base64 encoded)
+ */
+export async function importSessionFile(sessionData: string, name?: string): Promise<SessionInfo> {
+    const response = await fetch(`${API_BASE}/import-session-file`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_data: sessionData, name }),
+    });
+
+    if (!response.ok) {
+        const error: ApiError = await response.json();
+        throw new Error(typeof error.detail === 'string' ? error.detail : error.detail.message);
+    }
+
+    return response.json();
+}

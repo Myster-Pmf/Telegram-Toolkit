@@ -161,3 +161,206 @@ async def get_current_session():
         return None
     
     return session_to_response(session)
+
+
+# QR Code Login Storage (in-memory for simplicity)
+_qr_login_states: dict = {}
+
+
+class QRGenerateResponse(BaseModel):
+    """Response for QR code generation."""
+    token: str
+    url: str  # The tg://login URL to encode in QR
+
+
+class QRStatusResponse(BaseModel):
+    """Response for QR code status check."""
+    status: str  # 'pending', 'scanned', 'success', 'expired', 'error'
+    session: Optional[SessionResponse] = None
+    message: Optional[str] = None
+
+
+@router.post("/qr/generate", response_model=QRGenerateResponse)
+async def generate_qr_login():
+    """
+    Generate a QR code login token.
+    
+    Returns a URL that should be encoded as a QR code.
+    The user scans this with their Telegram mobile app.
+    """
+    import uuid
+    import asyncio
+    from telethon import TelegramClient
+    from telethon.sessions import StringSession
+    from src.config import settings
+    
+    try:
+        # Create a new client for QR login
+        token = str(uuid.uuid4())
+        client = TelegramClient(
+            StringSession(),
+            settings.api_id,
+            settings.api_hash,
+            device_model="Telegram Toolkit",
+            system_version="Web",
+            app_version="1.0.0"
+        )
+        
+        await client.connect()
+        
+        # Start QR login
+        qr_login = await client.qr_login()
+        
+        # Store the state
+        _qr_login_states[token] = {
+            'client': client,
+            'qr_login': qr_login,
+            'status': 'pending',
+            'session': None,
+        }
+        
+        # Schedule cleanup after 2 minutes
+        async def cleanup():
+            await asyncio.sleep(120)
+            if token in _qr_login_states:
+                state = _qr_login_states.pop(token, None)
+                if state and state.get('client'):
+                    await state['client'].disconnect()
+        
+        asyncio.create_task(cleanup())
+        
+        return QRGenerateResponse(
+            token=token,
+            url=qr_login.url
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate QR: {str(e)}")
+
+
+@router.get("/qr/status/{token}", response_model=QRStatusResponse)
+async def check_qr_status(token: str):
+    """
+    Check the status of a QR code login.
+    
+    Poll this endpoint until status becomes 'success' or 'expired'.
+    """
+    if token not in _qr_login_states:
+        return QRStatusResponse(status='expired', message='QR code expired or not found')
+    
+    state = _qr_login_states[token]
+    qr_login = state.get('qr_login')
+    client = state.get('client')
+    
+    if not qr_login or not client:
+        return QRStatusResponse(status='error', message='Invalid state')
+    
+    try:
+        import asyncio
+        
+        # Wait briefly for scan
+        try:
+            await asyncio.wait_for(qr_login.wait(timeout=2), timeout=3)
+        except asyncio.TimeoutError:
+            # Still waiting for scan
+            # Check if we need to recreate the QR (it expires every ~30 seconds)
+            if qr_login.expired:
+                await qr_login.recreate()
+                return QRStatusResponse(
+                    status='pending', 
+                    message='QR refreshed, rescan required'
+                )
+            return QRStatusResponse(status='pending')
+        
+        # If we get here, login was successful
+        session_string = client.session.save()
+        
+        # Import the session
+        session = await session_manager.import_session_string(
+            session_string=session_string,
+            name="QR Login"
+        )
+        
+        # Clean up
+        state['status'] = 'success'
+        state['session'] = session
+        _qr_login_states.pop(token, None)
+        
+        await client.disconnect()
+        
+        return QRStatusResponse(
+            status='success',
+            session=session_to_response(session)
+        )
+    except Exception as e:
+        _qr_login_states.pop(token, None)
+        if client:
+            await client.disconnect()
+        return QRStatusResponse(status='error', message=str(e))
+
+
+class SessionFileRequest(BaseModel):
+    """Request body for session file import."""
+    session_data: str  # Base64 encoded .session file content
+    name: Optional[str] = None
+
+
+@router.post("/import-session-file", response_model=SessionResponse)
+async def import_session_file(request: SessionFileRequest):
+    """
+    Import a .session file (SQLite database).
+    
+    The session file should be base64 encoded.
+    """
+    import base64
+    import tempfile
+    import os
+    from telethon import TelegramClient
+    from telethon.sessions import StringSession
+    from src.config import settings
+    
+    try:
+        # Decode the base64 session file
+        session_bytes = base64.b64decode(request.session_data)
+        
+        # Write to a temporary file
+        with tempfile.NamedTemporaryFile(suffix='.session', delete=False) as f:
+            f.write(session_bytes)
+            temp_path = f.name
+        
+        try:
+            # Create a client with this session file
+            session_name = temp_path.replace('.session', '')
+            client = TelegramClient(
+                session_name,
+                settings.api_id,
+                settings.api_hash
+            )
+            
+            await client.connect()
+            
+            # Check if authorized
+            if not await client.is_user_authorized():
+                await client.disconnect()
+                raise ValueError("Session file is not authorized")
+            
+            # Convert to string session for storage
+            session_string = StringSession.save(client.session)
+            
+            await client.disconnect()
+            
+            # Import the string session
+            session = await session_manager.import_session_string(
+                session_string=session_string,
+                name=request.name or "Imported Session"
+            )
+            
+            return session_to_response(session)
+        finally:
+            # Clean up temp file
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+                
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
