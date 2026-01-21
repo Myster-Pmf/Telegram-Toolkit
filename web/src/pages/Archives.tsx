@@ -1,23 +1,11 @@
 import { useState } from 'react'
-import { Plus, Eye, Trash2, Clock, Globe, Upload, MessageSquare, Image, Search, FolderOpen, ArrowLeft, MoreVertical, Users, HardDrive } from 'lucide-react'
+import { Plus, Eye, Trash2, Clock, Globe, Upload, MessageSquare, Image, Search, FolderOpen, ArrowLeft, MoreVertical, Users, HardDrive, Loader2 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import ImportModal from '../components/archives/ImportModal'
 import { fetchArchives, fetchArchivedChats, fetchArchivedMessages } from '../lib/api'
 
 
-// Mock data for imported exports
-const mockImports = [
-    {
-        id: 101,
-        name: 'Crypto Signals Export',
-        source: 'Chat Export (JSON)',
-        messages: 4200,
-        media: 156,
-        dateRange: 'Jan 1 - Jan 15, 2026',
-        importedAt: '2026-01-16 14:30',
-    },
-]
-
+// Imports are loaded from exports directory
 type ActiveTab = 'snapshots' | 'imports'
 
 export default function Archives() {

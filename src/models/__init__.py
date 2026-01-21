@@ -11,6 +11,7 @@ from src.models.message import Message
 from src.models.media import Media
 from src.models.event import Event
 from src.models.archive import Archive
+from src.models.user_profiles import UserProfile, UserSighting, UserActivity, UserConnection
 
 __all__ = [
     "Session",
@@ -20,4 +21,9 @@ __all__ = [
     "Media",
     "Event",
     "Archive",
+    "UserProfile",
+    "UserSighting",
+    "UserActivity",
+    "UserConnection",
 ]
+

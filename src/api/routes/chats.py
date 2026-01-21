@@ -5,13 +5,17 @@ Access and manage Telegram chats, groups, and channels.
 """
 
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks, File, Form, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
 
 from src.telegram.session_manager import session_manager
+from src.services.export_service import export_service
+from src.services.clone_service import CloneService
 
 router = APIRouter()
+
 
 
 class ChatResponse(BaseModel):
@@ -366,3 +370,366 @@ async def send_media(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to send media: {str(e)}")
+
+
+# ============================================================================
+# EXPORT ENDPOINTS
+# ============================================================================
+
+class ExportRequest(BaseModel):
+    format: str = "json"  # json, html, txt
+    include_media: bool = True
+    date_from: Optional[datetime] = None
+    date_to: Optional[datetime] = None
+    limit: Optional[int] = None
+    encrypt: bool = False
+    password: Optional[str] = None
+
+
+@router.post("/{chat_id}/export")
+async def export_chat(
+    chat_id: int,
+    request: ExportRequest,
+    background_tasks: BackgroundTasks,
+):
+    """
+    Export a chat to JSON, HTML, or TXT format.
+    
+    Set encrypt=true and provide password for AES-256 encrypted backup (.tgbak).
+    Media files are stored in a separate folder (or bundled in encrypted backup).
+    """
+    try:
+        result = await export_service.export_chat(
+            chat_id=chat_id,
+            format=request.format,
+            include_media=request.include_media,
+            date_from=request.date_from,
+            date_to=request.date_to,
+            limit=request.limit,
+            encrypt=request.encrypt,
+            password=request.password,
+        )
+        
+        return {
+            "success": True,
+            "export_id": result["export_id"],
+            "file_path": result["file_path"],
+            "encrypted_path": result.get("encrypted_path"),
+            "is_encrypted": result.get("is_encrypted", False),
+            "media_dir": result["media_dir"],
+            "message_count": result["message_count"],
+            "participant_count": result["participant_count"],
+            "format": result["format"],
+            "download_url": f"/api/chats/exports/{result['export_id']}/download",
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
+
+
+@router.get("/exports/{export_id}/download")
+async def download_export(export_id: str):
+    """Download an export file."""
+    import os
+    from pathlib import Path
+    from src.core.config import settings
+    
+    exports_dir = Path(settings.data_dir) / "exports"
+    
+    # Check for encrypted backup first
+    encrypted_path = exports_dir / f"{export_id}.tgbak"
+    if encrypted_path.exists():
+        return FileResponse(
+            path=str(encrypted_path),
+            filename=f"{export_id}.tgbak",
+            media_type="application/octet-stream",
+        )
+    
+    # Look for regular export file
+    export_dir = exports_dir / export_id
+    for ext in ["json", "html", "txt"]:
+        file_path = export_dir / f"export.{ext}"
+        if file_path.exists():
+            return FileResponse(
+                path=str(file_path),
+                filename=f"export_{export_id}.{ext}",
+                media_type="application/octet-stream",
+            )
+    
+    raise HTTPException(status_code=404, detail="Export not found")
+
+
+class ImportRequest(BaseModel):
+    password: str
+
+
+@router.post("/imports/decrypt")
+async def decrypt_import(
+    file: UploadFile = File(...),
+    password: str = Form(...),
+):
+    """
+    Decrypt an encrypted backup file (.tgbak).
+    
+    Returns the decrypted export data.
+    """
+    import tempfile
+    import json
+    from pathlib import Path
+    from src.core.config import settings
+    from src.services.encryption_service import EncryptionService
+    
+    try:
+        # Save uploaded file
+        content = await file.read()
+        
+        # Create output directory
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        import_id = f"import_{timestamp}"
+        output_dir = Path(settings.data_dir) / "exports" / import_id
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Write encrypted file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".tgbak") as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+        
+        try:
+            # Decrypt
+            EncryptionService.decrypt_export(tmp_path, str(output_dir), password)
+            
+            # Read the export.json to return data
+            export_json = output_dir / "export.json"
+            if export_json.exists():
+                with open(export_json, "r", encoding="utf-8") as f:
+                    export_data = json.load(f)
+                
+                return {
+                    "success": True,
+                    "import_id": import_id,
+                    "message_count": export_data.get("messageCount", 0),
+                    "participant_count": export_data.get("participantCount", 0),
+                    "channel": export_data.get("channel", {}),
+                    "output_dir": str(output_dir),
+                }
+            else:
+                return {
+                    "success": True,
+                    "import_id": import_id,
+                    "output_dir": str(output_dir),
+                    "message": "Decrypted but no export.json found",
+                }
+        finally:
+            # Clean up temp file
+            import os
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+                
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Decryption failed: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
+
+
+# ============================================================================
+# CLONE ENDPOINTS
+# ============================================================================
+
+class CloneRequest(BaseModel):
+    target_chat_id: int
+    mode: str = "reupload"  # "forward", "reupload", or "encrypted"
+    include_media: bool = True
+    include_pinned: bool = True
+    date_from: Optional[datetime] = None
+    date_to: Optional[datetime] = None
+    delay_seconds: float = 1.0
+    encryption_password: Optional[str] = None  # Required for encrypted mode
+
+
+@router.post("/{chat_id}/clone")
+async def clone_chat(
+    chat_id: int,
+    request: CloneRequest,
+    background_tasks: BackgroundTasks,
+):
+    """
+    Clone a chat/channel to another destination.
+    
+    Three modes available:
+    - "forward": Re-posts text content (no forward metadata)
+    - "reupload": Downloads media and uploads fresh (completely clean)
+    - "encrypted": Encrypts content before sending (appears as garbage in other apps!)
+    
+    For encrypted mode, provide encryption_password. Messages will appear as:
+    🔒[encrypted_base64_data] in other Telegram clients but decrypt normally in this app.
+    """
+    try:
+        if request.mode == "encrypted" and not request.encryption_password:
+            raise ValueError("encryption_password required for encrypted mode")
+        
+        result = await CloneService.clone_chat(
+            source_chat_id=chat_id,
+            target_chat_id=request.target_chat_id,
+            mode=request.mode,
+            include_media=request.include_media,
+            include_pinned=request.include_pinned,
+            date_from=request.date_from,
+            date_to=request.date_to,
+            delay_seconds=request.delay_seconds,
+            encryption_password=request.encryption_password,
+        )
+        
+        return {
+            "success": True,
+            **result,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Clone failed: {str(e)}")
+
+
+# ============================================================================
+# ENCRYPTION KEY MANAGEMENT
+# ============================================================================
+
+class RegisterKeyRequest(BaseModel):
+    password: str
+
+
+@router.post("/{chat_id}/encryption/register")
+async def register_encryption_key(chat_id: int, request: RegisterKeyRequest):
+    """
+    Register an encryption key for a chat.
+    
+    This allows the app to decrypt messages from encrypted chats.
+    """
+    from src.services.message_encryption import EncryptedChatRegistry
+    EncryptedChatRegistry.register_key(chat_id, request.password)
+    return {"success": True, "chat_id": chat_id, "message": "Encryption key registered"}
+
+
+@router.delete("/{chat_id}/encryption/key")
+async def remove_encryption_key(chat_id: int):
+    """Remove encryption key for a chat."""
+    from src.services.message_encryption import EncryptedChatRegistry
+    EncryptedChatRegistry.remove_key(chat_id)
+    return {"success": True, "chat_id": chat_id}
+
+
+@router.get("/encryption/chats")
+async def list_encrypted_chats():
+    """List all chats with registered encryption keys."""
+    from src.services.message_encryption import EncryptedChatRegistry
+    return {
+        "encrypted_chats": EncryptedChatRegistry.list_encrypted_chats(),
+    }
+
+
+class DecryptTextRequest(BaseModel):
+    text: str
+    password: str
+
+
+@router.post("/{chat_id}/decrypt-text")
+async def decrypt_text(chat_id: int, request: DecryptTextRequest):
+    """Decrypt a single encrypted message text."""
+    from src.services.message_encryption import MessageEncryption
+    
+    if not MessageEncryption.is_encrypted(request.text):
+        return {"decrypted": request.text, "was_encrypted": False}
+    
+    decrypted = MessageEncryption.decrypt_text(request.text, request.password, chat_id)
+    return {"decrypted": decrypted, "was_encrypted": True}
+
+
+@router.get("/clone/operations")
+async def list_clone_operations():
+    """List all clone operations and their progress."""
+    return {
+        "operations": CloneService.list_operations(),
+    }
+
+
+@router.get("/clone/operations/{operation_id}")
+async def get_clone_progress(operation_id: str):
+    """Get progress of a specific clone operation."""
+    progress = CloneService.get_progress(operation_id)
+    if not progress:
+        raise HTTPException(status_code=404, detail="Operation not found")
+    
+    return {
+        "operation_id": operation_id,
+        **progress.to_dict(),
+    }
+
+
+# ============================================================================
+# BULK OPERATIONS
+# ============================================================================
+
+class BulkDeleteRequest(BaseModel):
+    message_ids: List[int]
+
+
+class BulkForwardRequest(BaseModel):
+    message_ids: List[int]
+    target_chat_id: int
+
+
+@router.post("/{chat_id}/bulk/delete")
+async def bulk_delete_messages(chat_id: int, request: BulkDeleteRequest):
+    """Delete multiple messages at once."""
+    try:
+        client = await session_manager.get_client()
+        
+        deleted_count = 0
+        errors = []
+        
+        for msg_id in request.message_ids:
+            try:
+                await client.delete_messages(chat_id, [msg_id])
+                deleted_count += 1
+            except Exception as e:
+                errors.append(f"Message {msg_id}: {str(e)}")
+        
+        return {
+            "success": True,
+            "deleted_count": deleted_count,
+            "error_count": len(errors),
+            "errors": errors[:10],  # First 10 errors
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Bulk delete failed: {str(e)}")
+
+
+@router.post("/{chat_id}/bulk/forward")
+async def bulk_forward_messages(chat_id: int, request: BulkForwardRequest):
+    """Forward multiple messages to another chat."""
+    try:
+        client = await session_manager.get_client()
+        
+        forwarded_count = 0
+        errors = []
+        
+        for msg_id in request.message_ids:
+            try:
+                await client.forward_messages(
+                    request.target_chat_id,
+                    chat_id,
+                    [msg_id],
+                )
+                forwarded_count += 1
+            except Exception as e:
+                errors.append(f"Message {msg_id}: {str(e)}")
+        
+        return {
+            "success": True,
+            "forwarded_count": forwarded_count,
+            "error_count": len(errors),
+            "errors": errors[:10],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Bulk forward failed: {str(e)}")
+

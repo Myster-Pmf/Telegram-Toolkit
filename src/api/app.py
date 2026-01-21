@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.core.config import settings
 from src.core.database import init_database
-from src.api.routes import auth, sessions, chats, users, analytics, archives, media, websocket, llm
+from src.api.routes import auth, sessions, chats, users, analytics, archives, media, websocket, llm, profiles, commands
 
 
 @asynccontextmanager
@@ -58,6 +58,8 @@ def create_app() -> FastAPI:
     application.include_router(archives.router, prefix="/api/archives", tags=["Archives"])
     application.include_router(media.router, prefix="/api/media", tags=["Media"])
     application.include_router(llm.router, prefix="/api/llm", tags=["LLM"])
+    application.include_router(profiles.router, prefix="/api/profiles", tags=["Profiles"])
+    application.include_router(commands.router, prefix="/api/commands", tags=["Commands"])
     application.include_router(websocket.router, prefix="/ws", tags=["WebSocket"])
     
     # Static files

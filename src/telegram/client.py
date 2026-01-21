@@ -159,6 +159,16 @@ class BaseTelegramClient(ABC):
         """Download media from a message. Returns file path."""
         pass
     
+    @abstractmethod
+    async def delete_messages(self, chat_id: int, message_ids: List[int]) -> int:
+        """Delete messages from a chat. Returns number of deleted messages."""
+        pass
+    
+    @abstractmethod
+    async def forward_messages(self, to_chat_id: int, from_chat_id: int, message_ids: List[int]) -> List[Any]:
+        """Forward messages to another chat. Returns list of new messages."""
+        pass
+    
     # Users
     @abstractmethod
     async def get_user(self, user_id: int) -> UserInfo:
@@ -692,6 +702,20 @@ class TelethonClientWrapper(BaseTelegramClient):
             media_metadata=None,
             is_outgoing=True,
         )
+    
+    async def delete_messages(self, chat_id: int, message_ids: List[int]) -> int:
+        """Delete messages from a chat. Returns number of deleted messages."""
+        result = await self._client.delete_messages(chat_id, message_ids)
+        # Telethon returns number of deleted messages
+        return len(result) if result else 0
+    
+    async def forward_messages(self, to_chat_id: int, from_chat_id: int, message_ids: List[int]) -> List[Any]:
+        """Forward messages to another chat. Returns list of new messages."""
+        result = await self._client.forward_messages(to_chat_id, message_ids, from_chat_id)
+        # Return list of forwarded messages
+        if isinstance(result, list):
+            return result
+        return [result] if result else []
 
 
 # Type alias for the current implementation
