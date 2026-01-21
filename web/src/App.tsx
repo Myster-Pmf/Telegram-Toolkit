@@ -10,6 +10,7 @@ import Automation from './pages/Automation'
 import RawCommands from './pages/RawCommands'
 import GlobalSearch from './pages/GlobalSearch'
 import Auth from './pages/Auth'
+import Analytics from './pages/Analytics'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -41,6 +42,7 @@ function App() {
             <Route path="automation" element={<Automation />} />
             <Route path="commands" element={<RawCommands />} />
             <Route path="search" element={<GlobalSearch />} />
+            <Route path="analytics" element={<Analytics />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>

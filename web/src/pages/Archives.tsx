@@ -374,46 +374,14 @@ export default function Archives() {
                                 </button>
                             </div>
 
-                            {mockImports.map((item) => (
-                                <div
-                                    key={item.id}
-                                    className="p-5 rounded-2xl bg-[var(--color-bg-panel)] border border-[var(--color-border)] hover:border-[var(--color-accent)] transition-all flex items-center justify-between group shadow-sm"
-                                >
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-12 h-12 rounded-xl bg-[var(--color-bg-elevated)] flex items-center justify-center border border-[var(--color-border)]">
-                                            <FolderOpen className="w-6 h-6 text-[var(--color-accent)]" />
-                                        </div>
-                                        <div>
-                                            <h3 className="font-bold text-[var(--color-text-primary)]">{item.name}</h3>
-                                            <div className="mt-1 flex items-center gap-3 text-[10px] text-[var(--color-text-muted)] font-bold uppercase tracking-widest">
-                                                <span className="flex items-center gap-1">
-                                                    <MessageSquare className="w-3.5 h-3.5 text-[var(--color-accent)]" />
-                                                    {item.messages.toLocaleString()}
-                                                </span>
-                                                <span className="flex items-center gap-1 border-l border-[var(--color-border)] pl-3">
-                                                    <Image className="w-3.5 h-3.5 text-[var(--color-accent)]" />
-                                                    {item.media}
-                                                </span>
-                                                <span className="flex items-center gap-1 border-l border-[var(--color-border)] pl-3 text-[var(--color-text-dim)]">
-                                                    {item.dateRange}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
 
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            onClick={() => setViewingArchive(item)}
-                                            className="px-5 py-2 rounded-lg bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-xs font-bold text-[var(--color-text-primary)] hover:bg-[var(--color-accent)] hover:text-white transition-all shadow-sm"
-                                        >
-                                            View Archive
-                                        </button>
-                                        <button className="p-2 rounded-lg hover:bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] hover:text-[var(--color-error)]">
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
+                            {/* Imported archives will show here after uploading via the modal */}
+                            <div className="py-12 text-center border-2 border-dashed border-[var(--color-border)] rounded-2xl bg-[var(--color-bg-panel)]/50">
+                                <FolderOpen className="w-12 h-12 text-[var(--color-text-dim)] mx-auto mb-4 opacity-30" />
+                                <p className="text-sm text-[var(--color-text-muted)]">
+                                    No imported archives yet. Use the button above to import a Telegram export.
+                                </p>
+                            </div>
                         </div>
                     )}
                 </div>

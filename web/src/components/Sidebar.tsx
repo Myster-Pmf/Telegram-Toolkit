@@ -7,6 +7,7 @@ import {
     Search,
     Bot,
     Terminal,
+    TrendingUp,
     Settings
 } from 'lucide-react'
 
@@ -18,6 +19,7 @@ const navItems = [
     { path: '/search', icon: Search, label: 'Search' },
     { path: '/automation', icon: Bot, label: 'Automation' },
     { path: '/commands', icon: Terminal, label: 'Raw Commands' },
+    { path: '/analytics', icon: TrendingUp, label: 'Analytics' },
 ]
 
 export default function Sidebar() {
