@@ -41,6 +41,7 @@ class UserProfileResponse(BaseModel):
     is_bot: bool
     is_verified: bool
     is_premium: bool
+    is_pinned: bool
     fake_score: float
     message_count: int
     first_seen_at: Optional[datetime]
@@ -81,7 +82,7 @@ async def lookup_user(
 
 @router.get("/", response_model=List[UserProfileResponse])
 async def list_known_users(
-    limit: int = Query(default=50, ge=1, le=500),
+    limit: int = Query(default=100, ge=1),
     offset: int = Query(default=0, ge=0),
     search: Optional[str] = None,
 ):
@@ -91,7 +92,11 @@ async def list_known_users(
     Returns users that have been seen in monitored chats.
     """
     async with get_db() as db:
-        query = select(User).order_by(User.last_seen_at.desc().nulls_last())
+        query = (
+            select(User)
+            .order_by(User.is_pinned.desc())
+            .order_by(User.last_seen_at.desc().nulls_last())
+        )
         
         if search:
             search_pattern = f"%{search}%"
@@ -116,6 +121,7 @@ async def list_known_users(
                 is_bot=u.is_bot,
                 is_verified=u.is_verified,
                 is_premium=u.is_premium,
+                is_pinned=u.is_pinned,
                 fake_score=u.fake_score,
                 message_count=u.message_count,
                 first_seen_at=u.first_seen_at,
@@ -124,6 +130,22 @@ async def list_known_users(
             )
             for u in users
         ]
+
+
+@router.post("/{user_id}/pin")
+async def toggle_user_pin(user_id: int):
+    """Toggle a user's pinned status."""
+    async with get_db() as db:
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        user.is_pinned = not user.is_pinned
+        await db.commit()
+        
+        return {"id": user.id, "is_pinned": user.is_pinned}
 
 
 @router.get("/{user_id}", response_model=UserProfileResponse)
@@ -152,6 +174,7 @@ async def get_user_profile(user_id: int):
             is_bot=user.is_bot,
             is_verified=user.is_verified,
             is_premium=user.is_premium,
+            is_pinned=user.is_pinned,
             fake_score=user.fake_score,
             message_count=user.message_count,
             first_seen_at=user.first_seen_at,

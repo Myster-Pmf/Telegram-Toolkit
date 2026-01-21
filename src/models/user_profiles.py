@@ -39,6 +39,7 @@ class UserProfile(Base):
     is_deleted = Column(Boolean, default=False)
     is_scam = Column(Boolean, default=False)
     is_fake = Column(Boolean, default=False)
+    is_pinned = Column(Boolean, default=False)
     
     # Analytics
     first_seen = Column(DateTime, default=datetime.utcnow)

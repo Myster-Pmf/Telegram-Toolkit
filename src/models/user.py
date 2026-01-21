@@ -42,6 +42,7 @@ class User(Base):
     is_premium: Mapped[bool] = mapped_column(Boolean, default=False)
     is_scam: Mapped[bool] = mapped_column(Boolean, default=False)
     is_fake: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
     
     # Analysis results
     fake_score: Mapped[float] = mapped_column(Float, default=0.0)

@@ -41,6 +41,7 @@ class ProfileResponse(BaseModel):
     risk_factors: Optional[List[str]]
     notes: Optional[str]
     tags: Optional[List[str]]
+    is_pinned: bool
 
     class Config:
         from_attributes = True
@@ -101,7 +102,7 @@ class ScanResultResponse(BaseModel):
 @router.get("/", response_model=ProfileListResponse)
 async def list_profiles(
     page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
+    page_size: int = Query(100, ge=1),
     search: Optional[str] = None,
     min_risk: Optional[float] = Query(None, ge=0.0, le=1.0),
     sort_by: str = Query("last_seen", regex="^(last_seen|risk_score|total_messages|first_seen)$"),
@@ -134,7 +135,9 @@ async def list_profiles(
         total_result = await db.execute(count_query)
         total = total_result.scalar()
         
-        # Apply sorting
+        # Apply sorting (Pinned users always come first)
+        query = query.order_by(UserProfile.is_pinned.desc())
+        
         sort_column = getattr(UserProfile, sort_by)
         if sort_order == "desc":
             query = query.order_by(sort_column.desc())
@@ -274,6 +277,24 @@ async def analyze_profile(telegram_id: int):
         
         profile = await RiskAnalyzer.analyze_and_update(db, profile)
         return ProfileResponse.model_validate(profile)
+
+
+@router.post("/{telegram_id}/pin")
+async def toggle_pin(telegram_id: int):
+    """Toggle the pinned status of a user profile."""
+    async with get_db() as db:
+        result = await db.execute(
+            select(UserProfile).where(UserProfile.telegram_id == telegram_id)
+        )
+        profile = result.scalar_one_or_none()
+        
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+        
+        profile.is_pinned = not profile.is_pinned
+        await db.commit()
+        
+        return {"telegram_id": telegram_id, "is_pinned": profile.is_pinned}
 
 
 @router.post("/scan/{chat_id}", response_model=ScanResultResponse)

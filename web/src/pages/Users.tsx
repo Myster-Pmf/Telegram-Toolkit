@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
-import { Search, Filter, AlertTriangle, MessageSquare, Activity, Users as UsersIcon, Shield, ShieldAlert, Bot, Crown, RefreshCw, X, ChevronDown, Network, ScanLine, Tag, StickyNote } from 'lucide-react'
+import { Search, AlertTriangle, MessageSquare, Activity, Users as UsersIcon, Shield, ShieldAlert, Bot, Crown, RefreshCw, X, Network, ScanLine, Tag, StickyNote, Pin } from 'lucide-react'
 
 const API_BASE = '/api/profiles'
 
@@ -25,6 +24,7 @@ interface UserProfile {
     risk_factors: string[] | null
     notes: string | null
     tags: string[] | null
+    is_pinned: boolean
 }
 
 interface ProfileStats {
@@ -55,7 +55,6 @@ interface ChatSighting {
 }
 
 export default function Users() {
-    const { userId } = useParams()
     const [profiles, setProfiles] = useState<UserProfile[]>([])
     const [stats, setStats] = useState<ProfileStats | null>(null)
     const [selectedProfile, setSelectedProfile] = useState<UserProfile | null>(null)
@@ -85,9 +84,10 @@ export default function Users() {
 
     const fetchProfiles = async () => {
         try {
-            const params = new URLSearchParams({ page: '1', page_size: '100' })
+            const params = new URLSearchParams({ page: '1', page_size: '1000' })
             if (searchQuery) params.append('search', searchQuery)
             if (filterRisk === 'high') params.append('min_risk', '0.5')
+            // Note: sort_by is handled by the backend (pinned first)
             params.append('sort_by', 'last_seen')
             params.append('sort_order', 'desc')
 
@@ -174,6 +174,32 @@ export default function Users() {
         if (newTag && !tags.includes(newTag)) {
             setTags([...tags, newTag])
             setNewTag('')
+        }
+    }
+
+    const togglePin = async (e: React.MouseEvent, profile: UserProfile) => {
+        e.stopPropagation()
+        try {
+            const res = await fetch(`${API_BASE}/${profile.telegram_id}/pin`, {
+                method: 'POST'
+            })
+            if (res.ok) {
+                const data = await res.json()
+                setProfiles(prev => prev.map(p =>
+                    p.id === profile.id ? { ...p, is_pinned: data.is_pinned } : p
+                ).sort((a, b) => {
+                    if (a.id === profile.id) return -1
+                    if (b.id === profile.id) return 1
+                    return 0
+                }))
+                // Re-fetch to ensure perfect backend-driven order
+                fetchProfiles()
+                if (selectedProfile?.id === profile.id) {
+                    setSelectedProfile(prev => prev ? { ...prev, is_pinned: data.is_pinned } : null)
+                }
+            }
+        } catch (err) {
+            console.error('Failed to toggle pin:', err)
         }
     }
 
@@ -387,13 +413,21 @@ export default function Users() {
                                                 </div>
                                             </div>
 
-                                            {/* Risk Badge */}
-                                            <div className="text-right">
-                                                <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${risk.bg} ${risk.text}`}>
-                                                    {profile.risk_score >= 0.7 && <AlertTriangle className="w-3 h-3" />}
-                                                    {Math.round(profile.risk_score * 100)}%
+                                            {/* Risk Badge & Pin */}
+                                            <div className="flex flex-col items-end gap-2">
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        onClick={(e) => togglePin(e, profile)}
+                                                        className={`p-1.5 rounded-lg transition-all ${profile.is_pinned ? 'text-[var(--color-accent)] bg-[var(--color-accent-subtle)]' : 'text-[var(--color-text-dim)] hover:bg-[var(--color-bg-elevated)]'}`}
+                                                    >
+                                                        <Pin className={`w-3.5 h-3.5 ${profile.is_pinned ? 'fill-current' : ''}`} />
+                                                    </button>
+                                                    <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${risk.bg} ${risk.text}`}>
+                                                        {profile.risk_score >= 0.7 && <AlertTriangle className="w-3.5 h-3.5" />}
+                                                        {Math.round(profile.risk_score * 100)}%
+                                                    </div>
                                                 </div>
-                                                <div className="text-xs text-[var(--color-text-muted)] mt-1">
+                                                <div className="text-xs text-[var(--color-text-muted)]">
                                                     {formatDate(profile.last_seen)}
                                                 </div>
                                             </div>
@@ -468,12 +502,21 @@ export default function Users() {
                                 </div>
                             </div>
 
-                            <button
-                                onClick={() => setSelectedProfile(null)}
-                                className="p-2 rounded-lg hover:bg-[var(--color-bg-hover)] transition-colors"
-                            >
-                                <X className="w-5 h-5 text-[var(--color-text-muted)]" />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={(e) => togglePin(e, selectedProfile)}
+                                    className={`p-2 rounded-lg transition-all ${selectedProfile.is_pinned ? 'bg-[var(--color-accent)] text-white' : 'bg-[var(--color-bg-elevated)] text-[var(--color-text-dim)] hover:text-[var(--color-text-primary)]'}`}
+                                    title={selectedProfile.is_pinned ? 'Unpin User' : 'Pin to Top'}
+                                >
+                                    <Pin className={`w-5 h-5 ${selectedProfile.is_pinned ? 'fill-current' : ''}`} />
+                                </button>
+                                <button
+                                    onClick={() => setSelectedProfile(null)}
+                                    className="p-2 rounded-lg hover:bg-[var(--color-bg-hover)] transition-colors"
+                                >
+                                    <X className="w-5 h-5 text-[var(--color-text-muted)]" />
+                                </button>
+                            </div>
                         </div>
 
                         {/* Bio */}
