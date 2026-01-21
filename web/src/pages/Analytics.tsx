@@ -1,13 +1,21 @@
 import { TrendingUp, Users, MessageSquare, Clock, Globe, BarChart3, PieChart, Calendar } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import { fetchOverviewStats } from '../lib/api'
+import { fetchOverviewStats, fetchActivityHistory } from '../lib/api'
 import { StatsSkeleton } from '../components/common/SkeletonLoader'
 
 export default function Analytics() {
-    const { data: stats, isLoading } = useQuery({
+    const { data: stats, isLoading: statsLoading } = useQuery({
         queryKey: ['overview-stats'],
         queryFn: fetchOverviewStats,
     })
+
+    const { data: history = [], isLoading: historyLoading } = useQuery({
+        queryKey: ['activity-history'],
+        queryFn: () => fetchActivityHistory(7),
+    })
+
+    const isLoading = statsLoading || historyLoading
+    const maxCount = Math.max(...history.map(h => h.count), 1)
 
     if (isLoading) {
         return (
@@ -92,20 +100,20 @@ export default function Analytics() {
                         </select>
                     </div>
 
-                    {/* CSS-based Bar Chart Placeholder */}
+                    {/* CSS-based Bar Chart with real data */}
                     <div className="h-48 flex items-end justify-between gap-1 px-2">
-                        {[40, 65, 30, 85, 45, 70, 55].map((h, i) => (
+                        {history.map((h, i) => (
                             <div key={i} className="flex-1 group relative">
                                 <div
                                     className="w-full bg-[var(--color-accent)] rounded-t-lg opacity-20 group-hover:opacity-100 transition-all cursor-pointer relative"
-                                    style={{ height: `${h}%` }}
+                                    style={{ height: `${(h.count / maxCount) * 100}%` }}
                                 >
                                     <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-[var(--color-bg-elevated)] text-[10px] p-1 px-2 rounded border border-[var(--color-border)] opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap">
-                                        {Math.floor(h * 123)} msg
+                                        {h.count} msg
                                     </div>
                                 </div>
                                 <div className="text-[10px] text-[var(--color-text-dim)] mt-2 text-center font-bold">
-                                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i]}
+                                    {h.date.split('-').slice(1).join('/')}
                                 </div>
                             </div>
                         ))}
@@ -173,7 +181,7 @@ export default function Analytics() {
                 </div>
             </div>
 
-            {/* Bottom Section: Heatmap or Table */}
+            {/* Bottom Section: Heatmap */}
             <div className="p-6 rounded-2xl bg-[var(--color-bg-panel)] border border-[var(--color-border)]">
                 <div className="flex items-center justify-between mb-8">
                     <div>

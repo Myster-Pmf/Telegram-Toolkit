@@ -1,6 +1,6 @@
 import { MessageSquare, Users, Archive, Activity, TrendingUp, Loader2, Clock, Zap, ChevronRight } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import { fetchOverviewStats } from '../lib/api'
+import { fetchOverviewStats, fetchRecentActivity } from '../lib/api'
 import { StatsSkeleton, Skeleton } from '../components/common/SkeletonLoader'
 
 const formatNumber = (num: number): string => {
@@ -10,10 +10,16 @@ const formatNumber = (num: number): string => {
 }
 
 export default function Dashboard() {
-    const { data: stats, isLoading, error } = useQuery({
+    const { data: stats, isLoading: statsLoading, error: statsError } = useQuery({
         queryKey: ['overview-stats'],
         queryFn: fetchOverviewStats,
         refetchInterval: 30000,
+    })
+
+    const { data: activityLogs = [], isLoading: activityLoading } = useQuery({
+        queryKey: ['recent-activity'],
+        queryFn: () => fetchRecentActivity(10),
+        refetchInterval: 10000, // Refresh more often for "live" feel
     })
 
     const statCards = stats ? [
@@ -23,13 +29,23 @@ export default function Dashboard() {
         { label: 'Messages Stored', value: formatNumber(stats.total_messages), icon: Archive, change: 'Deep archive capacity', color: 'text-orange-500', bg: 'bg-orange-500/10' },
     ] : []
 
-    // For now, we use a slightly more realistic activity log
-    const activityLogs = [
-        { id: 1, type: 'automation', title: 'Auto-responder triggered', desc: 'Replied to @jack in "Crypto Group"', time: '2 mins ago', icon: Zap },
-        { id: 2, type: 'sync', title: 'Background Sync Complete', desc: 'Updated 12 chats and 450 messages', time: '15 mins ago', icon: Activity },
-        { id: 3, type: 'clover', title: 'Clone Task Started', desc: 'Cloning "Official News" to Private Backup', time: '1 hour ago', icon: MessageSquare },
-        { id: 4, type: 'auth', title: 'New Session Connected', desc: 'Account +44 7700 900000 is now active', time: '3 hours ago', icon: Users },
-    ]
+    const getIcon = (type: string) => {
+        if (type === 'message') return MessageSquare
+        if (type === 'automation') return Zap
+        return Activity
+    }
+
+    const formatTime = (isoString: string) => {
+        const date = new Date(isoString)
+        const diff = Date.now() - date.getTime()
+        if (diff < 60000) return 'Just now'
+        if (diff < 3600000) return `${Math.floor(diff / 60000)} mins ago`
+        if (diff < 86400000) return `${Math.floor(diff / 3600000)} hours ago`
+        return date.toLocaleDateString()
+    }
+
+    const isLoading = statsLoading || activityLoading
+    const error = statsError
 
     return (
         <div className="p-8 space-y-8 animate-in fade-in duration-500">
@@ -111,20 +127,23 @@ export default function Dashboard() {
                             </span>
                         </div>
                         <div className="p-2 divide-y divide-[var(--color-border)]/50">
-                            {activityLogs.map((log) => (
-                                <div key={log.id} className="p-4 flex items-start gap-4 hover:bg-[var(--color-bg-hover)] transition-colors rounded-xl mx-2 my-1">
-                                    <div className={`p-2.5 rounded-xl bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-[var(--color-text-secondary)]`}>
-                                        <log.icon className="w-5 h-5" />
-                                    </div>
-                                    <div className="flex-1">
-                                        <div className="flex justify-between">
-                                            <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{log.title}</h3>
-                                            <span className="text-[10px] text-[var(--color-text-muted)] font-medium">{log.time}</span>
+                            {activityLogs.map((log) => {
+                                const Icon = getIcon(log.type)
+                                return (
+                                    <div key={log.id} className="p-4 flex items-start gap-4 hover:bg-[var(--color-bg-hover)] transition-colors rounded-xl mx-2 my-1">
+                                        <div className={`p-2.5 rounded-xl bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-[var(--color-text-secondary)]`}>
+                                            <Icon className="w-5 h-5" />
                                         </div>
-                                        <p className="text-xs text-[var(--color-text-secondary)] mt-1">{log.desc}</p>
+                                        <div className="flex-1">
+                                            <div className="flex justify-between">
+                                                <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">{log.title}</h3>
+                                                <span className="text-[10px] text-[var(--color-text-muted)] font-medium">{formatTime(log.time)}</span>
+                                            </div>
+                                            <p className="text-xs text-[var(--color-text-secondary)] mt-1">{log.desc}</p>
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                )
+                            })}
                         </div>
                         <button className="w-full py-4 text-xs font-bold text-[var(--color-text-muted)] hover:text-[var(--color-accent)] uppercase tracking-widest transition-colors border-t border-[var(--color-border)] bg-[var(--color-bg-panel)]/20">
                             View Deep System Logs
@@ -193,10 +212,15 @@ export default function Dashboard() {
                             <div>
                                 <div className="flex justify-between text-xs mb-1.5">
                                     <span className="text-[var(--color-text-secondary)]">Storage Usage</span>
-                                    <span className="text-[var(--color-text-primary)] font-bold">1.2 GB / 10 GB</span>
+                                    <span className="text-[var(--color-text-primary)] font-bold">
+                                        {stats ? (stats.storage_usage_mb / 1024).toFixed(1) : '0'} GB / 10 GB
+                                    </span>
                                 </div>
                                 <div className="h-2 rounded-full bg-[var(--color-bg-base)] overflow-hidden">
-                                    <div className="h-full bg-[var(--color-accent)] w-[12%]" />
+                                    <div
+                                        className="h-full bg-[var(--color-accent)] transition-all duration-1000"
+                                        style={{ width: stats ? `${Math.min((stats.storage_usage_mb / 10240) * 100, 100)}%` : '0%' }}
+                                    />
                                 </div>
                             </div>
                             <div>
