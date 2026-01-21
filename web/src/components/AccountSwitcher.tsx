@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ChevronDown, Plus, Check, User } from 'lucide-react'
-import { fetchSessions } from '../lib/api'
+import { fetchSessions, switchSession } from '../lib/api'
 import type { Session } from '../lib/api'
 
 export default function AccountSwitcher() {
@@ -8,15 +8,36 @@ export default function AccountSwitcher() {
     const [sessions, setSessions] = useState<Session[]>([])
     const [isLoading, setIsLoading] = useState(true)
 
+    const loadSessions = async () => {
+        setIsLoading(true)
+        try {
+            const data = await fetchSessions()
+            setSessions(data)
+        } catch (error) {
+            console.error('Failed to fetch sessions:', error)
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
     // Fetch real sessions from API
     useEffect(() => {
-        fetchSessions()
-            .then(setSessions)
-            .catch(console.error)
-            .finally(() => setIsLoading(false))
+        loadSessions()
     }, [])
 
     const activeSession = sessions.find(s => s.is_active) || sessions[0]
+
+    const handleSessionSwitch = async (sessionId: number) => {
+        try {
+            await switchSession(sessionId)
+            await loadSessions()
+            setIsOpen(false)
+            // Refresh the current page to update data for the new session
+            window.location.reload()
+        } catch (error) {
+            console.error('Failed to switch session:', error)
+        }
+    }
 
     return (
         <div className="relative">
@@ -59,7 +80,7 @@ export default function AccountSwitcher() {
                             <button
                                 key={session.id}
                                 className="w-full flex items-center gap-3 px-3 py-2 hover:bg-[var(--color-bg-hover)] transition-colors"
-                                onClick={() => setIsOpen(false)}
+                                onClick={() => handleSessionSwitch(session.id)}
                             >
                                 <div className="w-8 h-8 rounded-full bg-[var(--color-accent-dim)] flex items-center justify-center">
                                     <User className="w-4 h-4 text-[var(--color-accent)]" />
