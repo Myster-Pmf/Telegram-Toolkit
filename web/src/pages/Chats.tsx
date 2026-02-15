@@ -767,7 +767,7 @@ export default function Chats() {
 
                                         {/* Media Layout: Media top, Text bottom if both exist */}
                                         {msg.has_media && (
-                                            <div className="mb-2 -mx-3 -mt-2.5 rounded-t-xl overflow-hidden relative group/media">
+                                            <div className={`mb-2 -mx-3 rounded-t-xl overflow-hidden relative group/media ${(!msg.is_outgoing && selectedChat?.chat_type !== 'private') || msg.reply_to_msg_id ? 'mt-1' : '-mt-2.5'}`}>
                                                 {msg.media_path ? (
                                                     <div className="relative">
                                                         <img
@@ -791,13 +791,27 @@ export default function Chats() {
                                                         )}
                                                     </div>
                                                 ) : (
-                                                    <div className="p-3 bg-black/10 flex items-center gap-3">
-                                                        <div className="w-10 h-10 rounded-lg bg-[var(--color-accent-dim)] flex items-center justify-center flex-shrink-0">
-                                                            {msg.media_type === 'video' ? <Play className="w-5 h-5 text-[var(--color-accent)]" /> : <ImageIcon className="w-5 h-5 text-[var(--color-accent)]" />}
+                                                    <div className="p-2 py-2.5 px-3 bg-black/10 flex items-center gap-3 hover:bg-black/20 transition-colors cursor-pointer group/file">
+                                                        <div className={`w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm transition-transform group-hover/file:scale-105 ${msg.is_outgoing ? 'bg-white/20' : 'bg-[var(--color-accent)]'}`}>
+                                                            {(() => {
+                                                                const ext = msg.media_metadata?.file_name?.split('.').pop()?.toLowerCase();
+                                                                if (msg.media_type === 'video') return <Play className="w-5 h-5 text-white fill-white" />;
+                                                                if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '')) return <ImageIcon className="w-5 h-5 text-white" />;
+                                                                return <FileText className="w-5 h-5 text-white" />;
+                                                            })()}
                                                         </div>
-                                                        <div className="overflow-hidden flex-1">
-                                                            <div className="text-xs font-semibold truncate">{msg.media_metadata?.file_name || msg.media_type || 'Media'}</div>
-                                                            <div className="text-[10px] opacity-60">{(msg.media_metadata?.file_size || 0) / 1024 > 1024 ? ((msg.media_metadata?.file_size || 0) / (1024 * 1024)).toFixed(1) + 'MB' : Math.round((msg.media_metadata?.file_size || 0) / 1024) + 'KB'}</div>
+                                                        <div className="overflow-hidden flex-1 flex flex-col gap-0.5">
+                                                            <div className="text-[13px] font-bold truncate leading-tight">{msg.media_metadata?.file_name || msg.media_type || 'Media'}</div>
+                                                            <div className={`text-[10px] font-medium opacity-60`}>
+                                                                {((msg.media_metadata?.file_size || 0) / 1024 > 1024
+                                                                    ? ((msg.media_metadata?.file_size || 0) / (1024 * 1024)).toFixed(1) + ' MB'
+                                                                    : Math.round((msg.media_metadata?.file_size || 0) / 1024) + ' KB'
+                                                                )}
+                                                                {msg.media_metadata?.mime_type && ` • ${msg.media_metadata.mime_type.split('/')[1].toUpperCase()}`}
+                                                            </div>
+                                                        </div>
+                                                        <div className="ml-2 flex-shrink-0 opacity-0 group-hover/file:opacity-100 transition-opacity">
+                                                            <Download className="w-4 h-4" />
                                                         </div>
                                                     </div>
                                                 )}
