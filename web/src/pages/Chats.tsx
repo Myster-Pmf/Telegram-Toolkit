@@ -583,7 +583,7 @@ export default function Chats() {
                 </div>
 
                 {/* Messages (Center Panel) */}
-                <div className="flex-1 flex flex-col bg-[var(--color-bg-base)]">
+                <div className="flex-1 flex flex-col bg-[var(--color-bg-base)] relative">
                     {/* Chat Header */}
                     <div className="h-14 px-4 flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-bg-panel)]">
                         <div className="flex items-center gap-3">
@@ -927,7 +927,7 @@ export default function Chats() {
                     {showScrollBottom && (
                         <button
                             onClick={scrollToBottom}
-                            className="absolute bottom-24 right-6 w-10 h-10 rounded-full bg-[var(--color-bg-panel)] border border-[var(--color-border)] shadow-xl flex items-center justify-center text-[var(--color-text-primary)] hover:bg-[var(--color-bg-elevated)] transition-all animate-in zoom-in-50 duration-200 z-10"
+                            className="absolute bottom-24 right-8 w-11 h-11 rounded-full bg-[var(--color-bg-panel)] border border-[var(--color-border)] shadow-2xl flex items-center justify-center text-[var(--color-text-primary)] hover:bg-[var(--color-bg-elevated)] transition-all animate-in zoom-in-50 duration-200 z-10 active:scale-90"
                         >
                             <ChevronDown className="w-6 h-6" />
                         </button>
@@ -1086,7 +1086,7 @@ export default function Chats() {
                 {showRightPanel && (
                     <div className="w-80 flex flex-col border-l border-[var(--color-border)] bg-[var(--color-bg-panel)] h-full overflow-hidden animate-in slide-in-from-right-4 duration-300">
                         {isToolView ? (
-                            <div className="p-3 border-b border-[var(--color-border)] flex items-center gap-3 bg-[var(--color-bg-panel)]">
+                            <div className="h-14 p-3 border-b border-[var(--color-border)] flex items-center gap-3 bg-[var(--color-bg-panel)] flex-shrink-0">
                                 <button
                                     onClick={() => setRightPanelTab('members')}
                                     className="p-1.5 rounded-md hover:bg-[var(--color-bg-hover)] transition-colors text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
@@ -1103,7 +1103,7 @@ export default function Chats() {
                         ) : (
                             <>
                                 {/* Close Button & Header */}
-                                <div className="p-2 flex justify-between items-center border-b border-[var(--color-border)]">
+                                <div className="h-14 p-2 py-3 flex justify-between items-center border-b border-[var(--color-border)] flex-shrink-0">
                                     <span className="text-xs font-bold px-2 text-[var(--color-text-secondary)] uppercase tracking-tight">Chat Info</span>
                                     <button
                                         onClick={() => setShowRightPanel(false)}
@@ -1116,8 +1116,8 @@ export default function Chats() {
                                 {/* Profile Header */}
                                 <div className="p-6 flex flex-col items-center text-center border-b border-[var(--color-border)] bg-black/5">
                                     <div className="w-20 h-20 rounded-2xl bg-[var(--color-accent-dim)] flex items-center justify-center relative shadow-lg mb-4 overflow-hidden">
-                                        {selectedChat?.photo_path ? (
-                                            <img src={getAvatarUrl(selectedChat.photo_path)!} className="w-full h-full object-cover" />
+                                        {(selectedChatId && chatPhotos[selectedChatId]) || selectedChat?.photo_path ? (
+                                            <img src={getAvatarUrl(chatPhotos[selectedChatId || 0] || selectedChat?.photo_path || '')!} className="w-full h-full object-cover" />
                                         ) : (
                                             <span className="text-[var(--color-accent)] text-2xl font-bold">
                                                 {(selectedChat?.title || '?').charAt(0)}
@@ -1265,8 +1265,8 @@ export default function Chats() {
                                             </div>
                                             <div className="flex-shrink-0 ml-2">
                                                 <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${member.rank === 'admin'
-                                                        ? 'bg-[var(--color-accent)] text-white'
-                                                        : 'text-[var(--color-text-muted)]'
+                                                    ? 'bg-[var(--color-accent)] text-white'
+                                                    : 'text-[var(--color-text-muted)]'
                                                     }`}>
                                                     {member.rank || ''}
                                                 </span>
