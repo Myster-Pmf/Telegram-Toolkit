@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
-import { Search, Settings, Users, Image as ImageIcon, FileText, Send, Copy, Download, AlertCircle, MessageSquare, Play, X, Languages, Paperclip, Pin, Reply, Trash2, Edit3, Terminal, Database, Check, ChevronDown, Share2, ExternalLink, Flag, MousePointer2, Code, ChevronLeft } from 'lucide-react'
+import { Search, Settings, Users, Image as ImageIcon, FileText, Send, Copy, Download, AlertCircle, MessageSquare, Play, X, Languages, Paperclip, Pin, Reply, Trash2, Edit3, Terminal, Database, Check, ChevronDown, Share2, ExternalLink, Flag, MousePointer2, Code, ChevronLeft, Music, Smile, Mic } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { cloneChat, exportChat, fetchChats, fetchMessages, fetchChatMembers, getMediaStreamUrl, getMediaDownloadUrl, fetchChatPhoto, sendMessage, translateText, sendMedia, editMessage, deleteMessage, pinMessage, unpinMessage, getPinnedMessage, sendReaction } from '../lib/api'
 import type { Chat, Message, Member } from '../lib/api'
 
-type RightPanelTab = 'members' | 'media' | 'files' | 'links' | 'settings' | 'export' | 'clone'
+type RightPanelTab = 'members' | 'media' | 'files' | 'links' | 'music' | 'gif' | 'voice' | 'settings' | 'export' | 'clone'
 
 export default function Chats() {
     const { chatId } = useParams()
@@ -1159,6 +1159,9 @@ export default function Chats() {
                                         { id: 'media', icon: ImageIcon, label: 'Media' },
                                         { id: 'files', icon: FileText, label: 'Files' },
                                         { id: 'links', icon: ExternalLink, label: 'Links' },
+                                        { id: 'music', icon: Music, label: 'Music' },
+                                        { id: 'gif', icon: Smile, label: 'GIF' },
+                                        { id: 'voice', icon: Mic, label: 'Voice' },
                                         { id: 'settings', icon: Settings, label: 'Settings' },
                                     ].map((tab) => (
                                         <button
@@ -1236,24 +1239,37 @@ export default function Chats() {
                                     {members.map((member) => (
                                         <button
                                             key={member.id}
-                                            className="w-full flex items-center gap-3 p-2 rounded-md hover:bg-[var(--color-bg-hover)] transition-colors text-left"
+                                            className="w-full flex items-center justify-between p-2 rounded-xl hover:bg-[var(--color-bg-hover)] transition-all group"
                                         >
-                                            <div className="w-8 h-8 rounded-full bg-[var(--color-accent-dim)] flex items-center justify-center relative overflow-hidden">
-                                                {member.photo_path ? (
-                                                    <img src={getAvatarUrl(member.photo_path)!} className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <span className="text-[var(--color-accent)] text-xs font-medium">
-                                                        {(member.first_name || '?').charAt(0)}
-                                                    </span>
-                                                )}
+                                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                <div className="w-11 h-11 rounded-full border-2 border-transparent group-hover:border-[var(--color-accent)] transition-all p-0.5 relative flex-shrink-0">
+                                                    <div className="w-full h-full rounded-full bg-[var(--color-accent-dim)] flex items-center justify-center overflow-hidden">
+                                                        {member.photo_path ? (
+                                                            <img src={getAvatarUrl(member.photo_path)!} className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <span className="text-[var(--color-accent)] text-sm font-bold">
+                                                                {(member.first_name || '?').charAt(0)}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-green-500 border-2 border-[var(--color-bg-panel)] shadow-sm" />
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <div className="text-sm font-bold text-[var(--color-text-primary)] truncate">
+                                                        {member.first_name} {member.last_name}
+                                                    </div>
+                                                    <div className="text-[11px] text-[var(--color-text-muted)] font-medium">
+                                                        {member.status || 'last seen recently'}
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div className="overflow-hidden">
-                                                <div className="text-sm text-[var(--color-text-primary)] truncate">
-                                                    {member.first_name} {member.last_name}
-                                                </div>
-                                                <div className="text-xs text-[var(--color-text-muted)] truncate">
-                                                    @{member.username || 'No username'}
-                                                </div>
+                                            <div className="flex-shrink-0 ml-2">
+                                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${member.rank === 'admin'
+                                                        ? 'bg-[var(--color-accent)] text-white'
+                                                        : 'text-[var(--color-text-muted)]'
+                                                    }`}>
+                                                    {member.rank || ''}
+                                                </span>
                                             </div>
                                         </button>
                                     ))}
@@ -1339,40 +1355,93 @@ export default function Chats() {
                                 </div>
                             )}
 
-                            {rightPanelTab === 'links' && (
+                            {rightPanelTab === 'music' && (
                                 <div className="space-y-4">
                                     <div className="relative">
                                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--color-text-muted)]" />
                                         <input
                                             type="text"
-                                            placeholder="Search links..."
+                                            placeholder="Search music..."
                                             value={rightPanelSearch}
                                             onChange={(e) => setRightPanelSearch(e.target.value)}
                                             className="w-full pl-9 pr-4 py-2 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-lg text-xs text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]"
                                         />
                                     </div>
-                                    <div className="space-y-2">
-                                        {messages.filter(m => m.text?.includes('http') && (m.text.toLowerCase().includes(rightPanelSearch.toLowerCase()) || !rightPanelSearch)).length > 0 ? (
-                                            messages.filter(m => m.text?.includes('http') && (m.text.toLowerCase().includes(rightPanelSearch.toLowerCase()) || !rightPanelSearch)).map(m => {
-                                                const url = m.text?.match(/https?:\/\/[^\s]+/)?.[0]
-                                                return (
-                                                    <a key={m.id} href={url} target="_blank" rel="noopener noreferrer" className="block p-3 rounded-lg bg-[var(--color-bg-elevated)] border border-[var(--color-border)] hover:bg-[var(--color-bg-hover)] transition-colors group">
-                                                        <div className="flex items-center gap-3 mb-1">
-                                                            <div className="w-7 h-7 rounded bg-blue-500/10 flex items-center justify-center flex-shrink-0">
-                                                                <ExternalLink className="w-3.5 h-3.5 text-blue-500" />
-                                                            </div>
-                                                            <div className="text-[11px] font-bold text-[var(--color-text-primary)] truncate flex-1">{url}</div>
+                                    <div className="space-y-1">
+                                        {messages.filter(m => m.media_type === 'audio' && (m.media_metadata?.file_name?.toLowerCase().includes(rightPanelSearch.toLowerCase()) || !rightPanelSearch)).length > 0 ? (
+                                            messages.filter(m => m.media_type === 'audio' && (m.media_metadata?.file_name?.toLowerCase().includes(rightPanelSearch.toLowerCase()) || !rightPanelSearch)).map(m => (
+                                                <div key={m.id} className="p-2 rounded-lg bg-[var(--color-bg-elevated)] border border-[var(--color-border)] flex items-center gap-3 hover:bg-[var(--color-bg-hover)] transition-colors group cursor-pointer">
+                                                    <div className="w-8 h-8 rounded bg-pink-500 flex items-center justify-center flex-shrink-0">
+                                                        <Music className="w-4 h-4 text-white" />
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="text-[11px] font-bold text-[var(--color-text-primary)] truncate">{m.media_metadata?.file_name || 'unknown song'}</div>
+                                                        <div className="text-[9px] text-[var(--color-text-muted)] uppercase">
+                                                            {m.media_metadata?.duration ? `${Math.floor(m.media_metadata.duration / 60)}:${String(m.media_metadata.duration % 60).padStart(2, '0')}` : '??:??'} • {m.media_metadata?.file_size ? `${Math.round(m.media_metadata.file_size / 1024 / 1024 * 10) / 10} MB` : 'N/A'}
                                                         </div>
-                                                        <p className="text-[10px] text-[var(--color-text-muted)] line-clamp-2 leading-tight pl-10">
-                                                            {m.text?.replace(url || '', '').trim() || 'No description available'}
-                                                        </p>
-                                                    </a>
-                                                )
-                                            })
+                                                    </div>
+                                                    <button className="p-1.5 rounded-full bg-[var(--color-bg-panel)] text-[var(--color-accent)] hover:scale-110 transition-transform">
+                                                        <Play className="w-3 h-3 fill-current" />
+                                                    </button>
+                                                </div>
+                                            ))
                                         ) : (
                                             <div className="text-center py-10 opacity-50">
-                                                <ExternalLink className="w-10 h-10 mx-auto mb-2 text-[var(--color-text-muted)]" />
-                                                <p className="text-xs">No links found</p>
+                                                <Music className="w-10 h-10 mx-auto mb-2 text-[var(--color-text-muted)]" />
+                                                <p className="text-xs">No music found</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {rightPanelTab === 'gif' && (
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-3 gap-1">
+                                        {messages.filter(m => m.media_type === 'video' && m.media_metadata?.is_animated).length > 0 ? (
+                                            messages.filter(m => m.media_type === 'video' && m.media_metadata?.is_animated).map(m => (
+                                                <div key={m.id} className="aspect-square bg-[var(--color-bg-elevated)] rounded-md overflow-hidden relative group cursor-pointer">
+                                                    <img
+                                                        src={getMediaStreamUrl(m.chat_id, m.id)}
+                                                        className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                                                    />
+                                                    <div className="absolute bottom-1 right-1 px-1 rounded bg-black/50 text-[8px] text-white font-bold">GIF</div>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div className="col-span-3 text-center py-10 opacity-50">
+                                                <Smile className="w-10 h-10 mx-auto mb-2 text-[var(--color-text-muted)]" />
+                                                <p className="text-xs">No GIFs found</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {rightPanelTab === 'voice' && (
+                                <div className="space-y-4">
+                                    <div className="space-y-1">
+                                        {messages.filter(m => m.media_type === 'voice').length > 0 ? (
+                                            messages.filter(m => m.media_type === 'voice').map(m => (
+                                                <div key={m.id} className="p-3 rounded-lg bg-[var(--color-bg-elevated)] border border-[var(--color-border)] flex items-center gap-3 hover:bg-[var(--color-bg-hover)] transition-colors group cursor-pointer">
+                                                    <div className="w-9 h-9 rounded-full bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+                                                        <Mic className="w-4 h-4 text-blue-500" />
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="text-[11px] font-bold text-[var(--color-text-primary)]">Voice Message</div>
+                                                        <div className="text-[9px] text-[var(--color-text-muted)] uppercase">
+                                                            {m.media_metadata?.duration ? `${Math.floor(m.media_metadata.duration / 60)}:${String(m.media_metadata.duration % 60).padStart(2, '0')}` : '??:??'} • {new Date(m.date).toLocaleDateString()}
+                                                        </div>
+                                                    </div>
+                                                    <button className="p-1.5 rounded-full bg-[var(--color-bg-panel)] text-blue-500 hover:scale-110 transition-transform">
+                                                        <Play className="w-3 h-3 fill-current" />
+                                                    </button>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div className="text-center py-10 opacity-50">
+                                                <Mic className="w-10 h-10 mx-auto mb-2 text-[var(--color-text-muted)]" />
+                                                <p className="text-xs">No voice messages</p>
                                             </div>
                                         )}
                                     </div>
