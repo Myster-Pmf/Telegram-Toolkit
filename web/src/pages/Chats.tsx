@@ -580,7 +580,13 @@ export default function Chats() {
                     <div
                         ref={messageContainerRef}
                         onScroll={handleScroll}
-                        className="flex-1 overflow-y-auto p-4 space-y-3 scroll-smooth"
+                        className="flex-1 overflow-y-auto p-4 space-y-3 scroll-smooth relative"
+                        style={{
+                            backgroundImage: 'url("/message_bg.jpg")',
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center',
+                            backgroundAttachment: 'local'
+                        }}
                     >
                         {isLoadingOlder && (
                             <div className="flex justify-center py-2">
