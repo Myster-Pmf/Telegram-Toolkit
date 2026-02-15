@@ -50,13 +50,16 @@ class MessageInfo:
     sender_photo: Optional[str]
     text: Optional[str]
     date: datetime
-    reply_to_msg_id: Optional[int]
-    forward_from_id: Optional[int]
-    has_media: bool
-    media_type: Optional[str]
-    media_path: Optional[str]
-    media_metadata: Optional[dict]  # file_name, file_size, duration, width, height
-    is_outgoing: bool
+    edit_date: Optional[datetime] = None
+    reply_to_msg_id: Optional[int] = None
+    forward_from_id: Optional[int] = None
+    has_media: bool = False
+    media_type: Optional[str] = None
+    media_path: Optional[str] = None
+    media_metadata: Optional[dict] = None  # file_name, file_size, duration, width, height
+    is_outgoing: bool = False
+    is_pinned: bool = False
+    raw_json: Optional[str] = None  # For developer mode
 
 
 class BaseTelegramClient(ABC):
@@ -167,6 +170,26 @@ class BaseTelegramClient(ABC):
     @abstractmethod
     async def forward_messages(self, to_chat_id: int, from_chat_id: int, message_ids: List[int]) -> List[Any]:
         """Forward messages to another chat. Returns list of new messages."""
+        pass
+
+    @abstractmethod
+    async def edit_message(self, chat_id: int, message_id: int, text: str) -> MessageInfo:
+        """Edit a message's text."""
+        pass
+
+    @abstractmethod
+    async def pin_message(self, chat_id: int, message_id: int, notify: bool = False) -> bool:
+        """Pin a message in a chat."""
+        pass
+
+    @abstractmethod
+    async def unpin_message(self, chat_id: int, message_id: int = None) -> bool:
+        """Unpin a message (or all if message_id is None)."""
+        pass
+    
+    @abstractmethod
+    async def get_pinned_message(self, chat_id: int) -> Optional[MessageInfo]:
+        """Get the current pinned message of a chat."""
         pass
     
     # Users
@@ -572,13 +595,16 @@ class TelethonClientWrapper(BaseTelegramClient):
                 sender_photo=None, 
                 text=m.message,
                 date=m.date,
+                edit_date=m.edit_date,
                 reply_to_msg_id=m.reply_to_msg_id,
                 forward_from_id=m.fwd_from.from_id if m.fwd_from else None,
                 has_media=bool(m.media),
                 media_type=media_type,
                 media_path=media_path,
                 media_metadata=media_metadata,
-                is_outgoing=m.out
+                is_outgoing=m.out,
+                is_pinned=m.pinned or False,
+                raw_json=m.to_json() if hasattr(m, 'to_json') else None
             ))
             
         return result
@@ -716,6 +742,52 @@ class TelethonClientWrapper(BaseTelegramClient):
         if isinstance(result, list):
             return result
         return [result] if result else []
+
+    async def edit_message(self, chat_id: int, message_id: int, text: str) -> MessageInfo:
+        """Edit a message's text."""
+        msg = await self._client.edit_message(chat_id, message_id, text)
+        return MessageInfo(
+            id=msg.id,
+            chat_id=chat_id,
+            sender_id=msg.sender_id,
+            sender_name="Me",
+            text=msg.text,
+            date=msg.date,
+            edit_date=msg.edit_date,
+            reply_to_msg_id=msg.reply_to_msg_id,
+            has_media=bool(msg.media),
+            is_outgoing=True,
+            is_pinned=msg.pinned or False
+        )
+
+    async def pin_message(self, chat_id: int, message_id: int, notify: bool = False) -> bool:
+        """Pin a message in a chat."""
+        await self._client.pin_message(chat_id, message_id, notify=notify)
+        return True
+
+    async def unpin_message(self, chat_id: int, message_id: int = None) -> bool:
+        """Unpin a message."""
+        await self._client.unpin_message(chat_id, message_id)
+        return True
+
+    async def get_pinned_message(self, chat_id: int) -> Optional[MessageInfo]:
+        """Get the current pinned message of a chat."""
+        from telethon.tl.types import InputMessagesFilterPinned
+        messages = await self._client.get_messages(chat_id, filter=InputMessagesFilterPinned, limit=1)
+        if not messages:
+            return None
+        m = messages[0]
+        return MessageInfo(
+            id=m.id,
+            chat_id=chat_id,
+            sender_id=m.sender_id,
+            sender_name="Pinned",
+            text=m.text,
+            date=m.date,
+            has_media=bool(m.media),
+            is_outgoing=m.out,
+            is_pinned=True
+        )
 
 
 # Type alias for the current implementation

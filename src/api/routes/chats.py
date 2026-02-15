@@ -40,12 +40,15 @@ class MessageResponse(BaseModel):
     sender_photo: Optional[str] = None
     text: Optional[str]
     date: datetime
-    reply_to_msg_id: Optional[int]
+    edit_date: Optional[datetime] = None
+    reply_to_msg_id: Optional[int] = None
     has_media: bool
     media_type: Optional[str]
     media_path: Optional[str] = None
     media_metadata: Optional[dict] = None  # file_name, file_size, duration, width, height
     is_outgoing: bool = False
+    is_pinned: bool = False
+    raw_json: Optional[str] = None
 
 
 class MemberResponse(BaseModel):
@@ -191,12 +194,15 @@ async def get_messages(
                 sender_photo=getattr(m, 'sender_photo', None),
                 text=m.text,
                 date=m.date,
+                edit_date=m.edit_date,
                 reply_to_msg_id=m.reply_to_msg_id,
                 has_media=m.has_media,
                 media_type=m.media_type,
                 media_path=getattr(m, 'media_path', None),
                 media_metadata=getattr(m, 'media_metadata', None),
                 is_outgoing=getattr(m, 'is_outgoing', False),
+                is_pinned=m.is_pinned,
+                raw_json=m.raw_json,
             )
             for m in messages
         ]
@@ -321,6 +327,110 @@ async def send_message(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to send message: {str(e)}")
+
+
+class EditMessageRequest(BaseModel):
+    text: str
+
+
+@router.patch("/{chat_id}/messages/{message_id}", response_model=MessageResponse)
+async def edit_message(
+    chat_id: int,
+    message_id: int,
+    request: EditMessageRequest,
+    session_id: Optional[int] = None,
+):
+    """Edit a message's text."""
+    try:
+        client = await session_manager.get_client(session_id)
+        m = await client.edit_message(chat_id, message_id, request.text)
+        return MessageResponse(
+            id=m.id,
+            chat_id=chat_id,
+            sender_id=m.sender_id,
+            sender_name=m.sender_name,
+            text=m.text,
+            date=m.date,
+            edit_date=m.edit_date,
+            reply_to_msg_id=m.reply_to_msg_id,
+            has_media=m.has_media,
+            is_outgoing=True,
+            is_pinned=m.is_pinned
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to edit message: {str(e)}")
+
+
+@router.post("/{chat_id}/messages/{message_id}/pin")
+async def pin_message(
+    chat_id: int,
+    message_id: int,
+    notify: bool = Query(default=False),
+    session_id: Optional[int] = None,
+):
+    """Pin a message in a chat."""
+    try:
+        client = await session_manager.get_client(session_id)
+        await client.pin_message(chat_id, message_id, notify=notify)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to pin message: {str(e)}")
+
+
+@router.delete("/{chat_id}/messages/{message_id}/pin")
+async def unpin_message(
+    chat_id: int,
+    message_id: int,
+    session_id: Optional[int] = None,
+):
+    """Unpin a message."""
+    try:
+        client = await session_manager.get_client(session_id)
+        await client.unpin_message(chat_id, message_id)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to unpin message: {str(e)}")
+
+
+@router.get("/{chat_id}/pinned", response_model=Optional[MessageResponse])
+async def get_pinned_message(
+    chat_id: int,
+    session_id: Optional[int] = None,
+):
+    """Get current pinned message."""
+    try:
+        client = await session_manager.get_client(session_id)
+        m = await client.get_pinned_message(chat_id)
+        if not m:
+            return None
+        return MessageResponse(
+            id=m.id,
+            chat_id=chat_id,
+            sender_id=m.sender_id,
+            sender_name=m.sender_name,
+            text=m.text,
+            date=m.date,
+            has_media=m.has_media,
+            is_outgoing=m.is_outgoing,
+            is_pinned=True
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get pinned message: {str(e)}")
+
+
+@router.delete("/{chat_id}/messages/{message_id}")
+async def delete_message(
+    chat_id: int,
+    message_id: int,
+    session_id: Optional[int] = None,
+):
+    """Delete a single message."""
+    try:
+        client = await session_manager.get_client(session_id)
+        await client.delete_messages(chat_id, [message_id])
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete message: {str(e)}")
 
 
 @router.post("/{chat_id}/send-media")
