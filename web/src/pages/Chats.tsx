@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
-import { Search, Settings, Users, Image as ImageIcon, FileText, Send, Copy, Download, AlertCircle, MessageSquare, Play, X, Languages, Paperclip, Pin, Reply, Trash2, Edit3, Terminal, Database, Check, ChevronDown, Share2, ExternalLink, Flag, MousePointer2, Code } from 'lucide-react'
+import { Search, Settings, Users, Image as ImageIcon, FileText, Send, Copy, Download, AlertCircle, MessageSquare, Play, X, Languages, Paperclip, Pin, Reply, Trash2, Edit3, Terminal, Database, Check, ChevronDown, Share2, ExternalLink, Flag, MousePointer2, Code, ChevronLeft } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { cloneChat, exportChat, fetchChats, fetchMessages, fetchChatMembers, getMediaStreamUrl, getMediaDownloadUrl, fetchChatPhoto, sendMessage, translateText, sendMedia, editMessage, deleteMessage, pinMessage, unpinMessage, getPinnedMessage, sendReaction } from '../lib/api'
 import type { Chat, Message, Member } from '../lib/api'
@@ -58,6 +58,25 @@ export default function Chats() {
     const [replyToMessage, setReplyToMessage] = useState<Message | null>(null)
     const [editingMessage, setEditingMessage] = useState<Message | null>(null)
     const [showScrollBottom, setShowScrollBottom] = useState(false)
+    const [rightPanelSearch, setRightPanelSearch] = useState('')
+    const [targetLanguage, setTargetLanguage] = useState(() => localStorage.getItem('targetLanguage') || 'English')
+    const [showLanguageDropdown, setShowLanguageDropdown] = useState(false)
+
+    useEffect(() => {
+        localStorage.setItem('targetLanguage', targetLanguage)
+    }, [targetLanguage])
+
+    const dropdownRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setShowLanguageDropdown(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
     const [pinnedMessage, setPinnedMessage] = useState<Message | null>(null)
     const [contextMenu, setContextMenu] = useState<{ x: number, y: number, message: Message } | null>(null)
     const [showRawJson, setShowRawJson] = useState<string | null>(null)
@@ -116,6 +135,8 @@ export default function Chats() {
 
     // Video Modal State
     const [videoModal, setVideoModal] = useState<{ chatId: number; messageId: number; title?: string } | null>(null)
+
+    const isToolView = rightPanelTab === 'clone' || rightPanelTab === 'export'
 
     // AbortController ref for cancelling requests when chat changes
     const abortControllerRef = useRef<AbortController | null>(null)
@@ -739,7 +760,7 @@ export default function Chats() {
                                         {/* Reply Preview in Message */}
                                         {msg.reply_to_msg_id && (
                                             <div
-                                                className={`mb-1.5 p-1.5 py-1 px-2.5 rounded-md border-l-[3px] text-[11px] bg-black/10 cursor-pointer hover:bg-black/20 transition-all flex flex-col gap-0.5 ${msg.is_outgoing ? 'border-white/60' : 'border-[var(--color-accent)]'}`}
+                                                className={`mb-1.5 p-1.5 py-1 px-2.5 rounded-md border-l-[3px] text-[11px] bg-white/5 border-white/5 cursor-pointer hover:bg-white/10 transition-all flex flex-col gap-0.5 ${msg.is_outgoing ? 'border-white/60' : 'border-[var(--color-accent)]'}`}
                                                 onClick={() => {
                                                     const target = document.getElementById(`msg-${msg.reply_to_msg_id}`);
                                                     if (target) {
@@ -791,8 +812,8 @@ export default function Chats() {
                                                         )}
                                                     </div>
                                                 ) : (
-                                                    <div className="p-2 py-2.5 px-3 bg-black/10 flex items-center gap-3 hover:bg-black/20 transition-colors cursor-pointer group/file">
-                                                        <div className={`w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm transition-transform group-hover/file:scale-105 ${msg.is_outgoing ? 'bg-white/20' : 'bg-[var(--color-accent)]'}`}>
+                                                    <div className="p-2 py-2.5 px-3 bg-white/5 flex items-center gap-3 hover:bg-white/10 transition-colors cursor-pointer group/file border border-white/5">
+                                                        <div className={`w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm transition-transform group-hover/file:scale-105 ${msg.is_outgoing ? 'bg-white/10' : 'bg-[var(--color-accent)]'}`}>
                                                             {(() => {
                                                                 const ext = msg.media_metadata?.file_name?.split('.').pop()?.toLowerCase();
                                                                 if (msg.media_type === 'video') return <Play className="w-5 h-5 text-white fill-white" />;
@@ -846,11 +867,11 @@ export default function Chats() {
                                                 {msg.text}
                                                 <div className={`float-right flex items-center justify-end gap-1 text-[10px] leading-none pt-2 pl-2 h-4 select-none ${msg.is_outgoing ? 'text-white/60' : 'text-[var(--color-text-muted)]'}`}>
                                                     {msg.edit_date && (new Date(msg.edit_date).getTime() - new Date(msg.date).getTime() > 5000) && (
-                                                        <span className="opacity-70 italic text-[9px] mr-0.5">edited</span>
+                                                        <span className="opacity-70 italic text-[9px] mr-1">edited</span>
                                                     )}
                                                     <span>{new Date(msg.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                                                     {msg.is_outgoing && (
-                                                        <div className="flex -space-x-1.5 ml-0.5">
+                                                        <div className="flex -space-x-1 ml-0.5">
                                                             <Check className="w-3 h-3" />
                                                             <Check className="w-3 h-3" />
                                                         </div>
@@ -859,11 +880,19 @@ export default function Chats() {
                                             </div>
                                         )}
 
-                                        {/* Fallback for media without text: ensure timestamp is visible */}
+                                        {/* Unified timestamp for non-text messages (media, links, etc.) */}
                                         {!msg.text && (
-                                            <div className="absolute bottom-1 right-1 flex items-center gap-1 text-[10px] leading-none bg-black/30 backdrop-blur-md px-2 py-1 rounded-full text-white/90 shadow-sm border border-white/5">
+                                            <div className={`flex items-center justify-end gap-1 text-[10px] leading-none mt-1 select-none ${msg.is_outgoing ? 'text-white/60' : 'text-[var(--color-text-muted)]'}`}>
+                                                {msg.edit_date && (new Date(msg.edit_date).getTime() - new Date(msg.date).getTime() > 5000) && (
+                                                    <span className="opacity-70 italic text-[9px] mr-1">edited</span>
+                                                )}
                                                 <span>{new Date(msg.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                                {msg.is_outgoing && <Check className="w-3 h-3" />}
+                                                {msg.is_outgoing && (
+                                                    <div className="flex -space-x-1 ml-0.5">
+                                                        <Check className="w-3 h-3" />
+                                                        <Check className="w-3 h-3" />
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
 
@@ -981,27 +1010,63 @@ export default function Chats() {
                                 disabled={isSending || !selectedChatId}
                                 className="flex-1 h-10 px-4 rounded-lg bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
                             />
-                            {/* Translate button */}
-                            <button
-                                onClick={async () => {
-                                    if (!messageInput.trim()) return
-                                    try {
-                                        setIsSending(true)
-                                        const result = await translateText(messageInput)
-                                        setMessageInput(result.translated_text)
-                                    } catch (err: any) {
-                                        console.error('Translation failed:', err)
-                                        alert(err.message || 'Translation failed')
-                                    } finally {
-                                        setIsSending(false)
-                                    }
-                                }}
-                                disabled={isSending || !messageInput.trim() || !selectedChatId}
-                                className="w-10 h-10 rounded-lg bg-[var(--color-bg-elevated)] border border-[var(--color-border)] flex items-center justify-center hover:border-[var(--color-accent)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                title="Translate message (uses configured LLM)"
-                            >
-                                <Languages className="w-5 h-5 text-[var(--color-text-secondary)]" />
-                            </button>
+                            {/* Translate Split Button */}
+                            <div className="relative flex" ref={dropdownRef}>
+                                <button
+                                    onClick={async () => {
+                                        if (!messageInput.trim()) return
+                                        try {
+                                            setIsSending(true)
+                                            const result = await translateText(messageInput, targetLanguage)
+                                            setMessageInput(result.translated_text)
+                                        } catch (err: any) {
+                                            console.error('Translation failed:', err)
+                                            alert(err.message || 'Translation failed')
+                                        } finally {
+                                            setIsSending(false)
+                                        }
+                                    }}
+                                    disabled={isSending || !messageInput.trim() || !selectedChatId}
+                                    className="h-10 px-3 rounded-l-lg bg-[var(--color-bg-elevated)] border border-[var(--color-border)] border-r-0 flex items-center justify-center hover:border-[var(--color-accent)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed group/trans"
+                                    title={`Translate to ${targetLanguage}`}
+                                >
+                                    <Languages className="w-5 h-5 text-[var(--color-text-secondary)] group-hover/trans:text-[var(--color-accent)]" />
+                                    <span className="ml-2 text-[10px] font-bold text-[var(--color-text-muted)] group-hover/trans:text-[var(--color-accent)] hidden md:block">{targetLanguage}</span>
+                                </button>
+                                <button
+                                    onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
+                                    disabled={isSending || !selectedChatId}
+                                    className="h-10 px-1.5 rounded-r-lg bg-[var(--color-bg-elevated)] border border-[var(--color-border)] flex items-center justify-center hover:border-[var(--color-accent)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <ChevronDown className={`w-3.5 h-3.5 text-[var(--color-text-muted)] transition-transform ${showLanguageDropdown ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {/* Language Dropdown */}
+                                {showLanguageDropdown && (
+                                    <div className="absolute bottom-full mb-2 right-0 w-40 bg-[var(--color-bg-panel)] border border-[var(--color-border)] rounded-lg shadow-2xl py-1 z-50 animate-in fade-in slide-in-from-bottom-2 duration-150">
+                                        <div className="px-3 py-1.5 text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-tight border-b border-[var(--color-border)] mb-1">Target Language</div>
+                                        <div className="max-h-60 overflow-y-auto no-scrollbar">
+                                            {[
+                                                'English', 'Spanish', 'French', 'German', 'Italian',
+                                                'Portuguese', 'Russian', 'Chinese', 'Japanese',
+                                                'Korean', 'Arabic', 'Hindi', 'Bengali', 'Turkish'
+                                            ].map(lang => (
+                                                <button
+                                                    key={lang}
+                                                    onClick={() => {
+                                                        setTargetLanguage(lang)
+                                                        setShowLanguageDropdown(false)
+                                                    }}
+                                                    className={`w-full px-3 py-1.5 text-left text-xs transition-colors flex items-center justify-between ${targetLanguage === lang ? 'text-[var(--color-accent)] bg-[var(--color-accent)]/5 font-bold' : 'text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]'}`}
+                                                >
+                                                    {lang}
+                                                    {targetLanguage === lang && <Check className="w-3 h-3" />}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                             <button
                                 onClick={handleSendMessage}
                                 disabled={isSending || !messageInput.trim() || !selectedChatId}
@@ -1019,28 +1084,98 @@ export default function Chats() {
 
                 {/* Right Panel (Info) */}
                 {showRightPanel && (
-                    <div className="w-80 flex flex-col border-l border-[var(--color-border)] bg-[var(--color-bg-panel)]">
-                        {/* Tabs */}
-                        <div className="flex border-b border-[var(--color-border)] overflow-x-auto no-scrollbar">
-                            {[
-                                { id: 'members', icon: Users, label: 'Members' },
-                                { id: 'media', icon: ImageIcon, label: 'Media' },
-                                { id: 'files', icon: FileText, label: 'Files' },
-                                { id: 'settings', icon: Settings, label: 'Settings' },
-                            ].map((tab) => (
+                    <div className="w-80 flex flex-col border-l border-[var(--color-border)] bg-[var(--color-bg-panel)] h-full overflow-hidden animate-in slide-in-from-right-4 duration-300">
+                        {isToolView ? (
+                            <div className="p-3 border-b border-[var(--color-border)] flex items-center gap-3 bg-[var(--color-bg-panel)]">
                                 <button
-                                    key={tab.id}
-                                    onClick={() => setRightPanelTab(tab.id as RightPanelTab)}
-                                    className={`flex-shrink-0 px-4 py-3 flex items-center justify-center transition-colors ${rightPanelTab === tab.id
-                                        ? 'text-[var(--color-accent)] border-b-2 border-[var(--color-accent)]'
-                                        : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]'
-                                        }`}
-                                    title={tab.label}
+                                    onClick={() => setRightPanelTab('members')}
+                                    className="p-1.5 rounded-md hover:bg-[var(--color-bg-hover)] transition-colors text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]"
                                 >
-                                    <tab.icon className="w-4 h-4" />
+                                    <ChevronLeft className="w-5 h-5" />
                                 </button>
-                            ))}
-                        </div>
+                                <div className="min-w-0">
+                                    <h3 className="text-sm font-bold text-[var(--color-text-primary)] truncate">
+                                        {rightPanelTab === 'clone' ? 'Channel Cloner' : 'Selective Exporter'}
+                                    </h3>
+                                    <p className="text-[10px] text-[var(--color-accent)] font-medium">@{selectedChat?.username || 'tool'}</p>
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                {/* Close Button & Header */}
+                                <div className="p-2 flex justify-between items-center border-b border-[var(--color-border)]">
+                                    <span className="text-xs font-bold px-2 text-[var(--color-text-secondary)] uppercase tracking-tight">Chat Info</span>
+                                    <button
+                                        onClick={() => setShowRightPanel(false)}
+                                        className="p-1.5 rounded-md hover:bg-[var(--color-bg-hover)] transition-colors text-[var(--color-text-muted)]"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+
+                                {/* Profile Header */}
+                                <div className="p-6 flex flex-col items-center text-center border-b border-[var(--color-border)] bg-black/5">
+                                    <div className="w-20 h-20 rounded-2xl bg-[var(--color-accent-dim)] flex items-center justify-center relative shadow-lg mb-4 overflow-hidden">
+                                        {selectedChat?.photo_path ? (
+                                            <img src={getAvatarUrl(selectedChat.photo_path)!} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <span className="text-[var(--color-accent)] text-2xl font-bold">
+                                                {(selectedChat?.title || '?').charAt(0)}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <h2 className="text-base font-bold text-[var(--color-text-primary)] truncate w-full px-2">
+                                        {selectedChat?.title}
+                                    </h2>
+                                    <p className="text-xs text-[var(--color-accent)] font-medium mt-1">
+                                        @{selectedChat?.username || 'private_chat'}
+                                    </p>
+                                    <div className="flex gap-4 mt-6 w-full">
+                                        <button className="flex-1 flex flex-col items-center gap-1 group">
+                                            <div className="w-9 h-9 rounded-full bg-[var(--color-bg-elevated)] border border-[var(--color-border)] flex items-center justify-center group-hover:bg-[var(--color-bg-hover)] transition-colors">
+                                                <AlertCircle className="w-4 h-4 text-[var(--color-text-secondary)]" />
+                                            </div>
+                                            <span className="text-[10px] text-[var(--color-text-muted)]">Mute</span>
+                                        </button>
+                                        <button className="flex-1 flex flex-col items-center gap-1 group">
+                                            <div className="w-9 h-9 rounded-full bg-[var(--color-bg-elevated)] border border-[var(--color-border)] flex items-center justify-center group-hover:bg-[var(--color-bg-hover)] transition-colors">
+                                                <Search className="w-4 h-4 text-[var(--color-text-secondary)]" />
+                                            </div>
+                                            <span className="text-[10px] text-[var(--color-text-muted)]">Search</span>
+                                        </button>
+                                        <button className="flex-1 flex flex-col items-center gap-1 group">
+                                            <div className="w-9 h-9 rounded-full bg-[var(--color-bg-elevated)] border border-[var(--color-border)] flex items-center justify-center group-hover:bg-[var(--color-bg-hover)] transition-colors">
+                                                <ExternalLink className="w-4 h-4 text-[var(--color-text-secondary)]" />
+                                            </div>
+                                            <span className="text-[10px] text-[var(--color-text-muted)]">More</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Tabs */}
+                                <div className="flex border-b border-[var(--color-border)] overflow-x-auto no-scrollbar bg-[var(--color-bg-panel)] sticky top-0 z-10 transition-all duration-300">
+                                    {[
+                                        { id: 'members', icon: Users, label: 'Members' },
+                                        { id: 'media', icon: ImageIcon, label: 'Media' },
+                                        { id: 'files', icon: FileText, label: 'Files' },
+                                        { id: 'links', icon: ExternalLink, label: 'Links' },
+                                        { id: 'settings', icon: Settings, label: 'Settings' },
+                                    ].map((tab) => (
+                                        <button
+                                            key={tab.id}
+                                            onClick={() => setRightPanelTab(tab.id as RightPanelTab)}
+                                            className={`flex-1 px-2 py-3.5 flex items-center justify-center transition-colors border-b-2 ${rightPanelTab === tab.id
+                                                ? 'text-[var(--color-accent)] border-[var(--color-accent)] bg-[var(--color-accent)]/5'
+                                                : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] border-transparent'
+                                                }`}
+                                            title={tab.label}
+                                        >
+                                            <tab.icon className="w-4 h-4" />
+                                        </button>
+                                    ))}
+                                </div>
+                            </>
+                        )}
 
                         {/* Tab Content */}
                         <div className="flex-1 overflow-y-auto p-4">
@@ -1126,9 +1261,120 @@ export default function Chats() {
                             )}
 
                             {rightPanelTab === 'media' && (
-                                <div className="grid grid-cols-3 gap-1">
-                                    <div className="col-span-3 text-center py-4 text-xs text-[var(--color-text-muted)]">
-                                        Media gallery not yet integrated.
+                                <div className="space-y-4">
+                                    <div className="relative">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--color-text-muted)]" />
+                                        <input
+                                            type="text"
+                                            placeholder="Search media..."
+                                            value={rightPanelSearch}
+                                            onChange={(e) => setRightPanelSearch(e.target.value)}
+                                            className="w-full pl-9 pr-4 py-2 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-lg text-xs text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]"
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-1">
+                                        {messages.filter(m => (m.media_type === 'photo' || m.media_type === 'video') && (m.text?.toLowerCase().includes(rightPanelSearch.toLowerCase()) || !rightPanelSearch)).length > 0 ? (
+                                            messages.filter(m => (m.media_type === 'photo' || m.media_type === 'video') && (m.text?.toLowerCase().includes(rightPanelSearch.toLowerCase()) || !rightPanelSearch)).map(m => (
+                                                <div
+                                                    key={m.id}
+                                                    className="aspect-square bg-[var(--color-bg-elevated)] rounded-md overflow-hidden relative group cursor-pointer"
+                                                    onClick={() => m.media_type === 'video' ? setVideoModal({ chatId: m.chat_id, messageId: m.id, title: m.media_metadata?.file_name }) : null}
+                                                >
+                                                    <img
+                                                        src={getMediaStreamUrl(m.chat_id, m.id)}
+                                                        className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                                                    />
+                                                    {m.media_type === 'video' && (
+                                                        <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                                                            <Play className="w-5 h-5 text-white fill-white" />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div className="col-span-3 text-center py-10 opacity-50">
+                                                <ImageIcon className="w-10 h-10 mx-auto mb-2 text-[var(--color-text-muted)]" />
+                                                <p className="text-xs">No media found</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {rightPanelTab === 'files' && (
+                                <div className="space-y-4">
+                                    <div className="relative">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--color-text-muted)]" />
+                                        <input
+                                            type="text"
+                                            placeholder="Search files..."
+                                            value={rightPanelSearch}
+                                            onChange={(e) => setRightPanelSearch(e.target.value)}
+                                            className="w-full pl-9 pr-4 py-2 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-lg text-xs text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        {messages.filter(m => m.media_type === 'document' && (m.media_metadata?.file_name?.toLowerCase().includes(rightPanelSearch.toLowerCase()) || !rightPanelSearch)).length > 0 ? (
+                                            messages.filter(m => m.media_type === 'document' && (m.media_metadata?.file_name?.toLowerCase().includes(rightPanelSearch.toLowerCase()) || !rightPanelSearch)).map(m => (
+                                                <div key={m.id} className="p-2 rounded-lg bg-[var(--color-bg-elevated)] border border-[var(--color-border)] flex items-center gap-3 hover:bg-[var(--color-bg-hover)] transition-colors group cursor-pointer">
+                                                    <div className="w-8 h-8 rounded bg-[var(--color-accent)] flex items-center justify-center flex-shrink-0">
+                                                        <FileText className="w-4 h-4 text-white" />
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="text-[11px] font-bold text-[var(--color-text-primary)] truncate">{m.media_metadata?.file_name || 'unnamed'}</div>
+                                                        <div className="text-[9px] text-[var(--color-text-muted)] uppercase">{m.media_metadata?.file_size ? `${Math.round(m.media_metadata.file_size / 1024)} KB` : 'size unknown'} • {m.media_metadata?.mime_type || 'DATA'}</div>
+                                                    </div>
+                                                    <a href={getMediaDownloadUrl(m.chat_id, m.id)} download className="p-1 text-[var(--color-text-muted)] hover:text-white transition-colors">
+                                                        <Download className="w-3.5 h-3.5" />
+                                                    </a>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div className="text-center py-10 opacity-50">
+                                                <FileText className="w-10 h-10 mx-auto mb-2 text-[var(--color-text-muted)]" />
+                                                <p className="text-xs">No files found</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {rightPanelTab === 'links' && (
+                                <div className="space-y-4">
+                                    <div className="relative">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--color-text-muted)]" />
+                                        <input
+                                            type="text"
+                                            placeholder="Search links..."
+                                            value={rightPanelSearch}
+                                            onChange={(e) => setRightPanelSearch(e.target.value)}
+                                            className="w-full pl-9 pr-4 py-2 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-lg text-xs text-[var(--color-text-primary)] focus:outline-none focus:border-[var(--color-accent)]"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        {messages.filter(m => m.text?.includes('http') && (m.text.toLowerCase().includes(rightPanelSearch.toLowerCase()) || !rightPanelSearch)).length > 0 ? (
+                                            messages.filter(m => m.text?.includes('http') && (m.text.toLowerCase().includes(rightPanelSearch.toLowerCase()) || !rightPanelSearch)).map(m => {
+                                                const url = m.text?.match(/https?:\/\/[^\s]+/)?.[0]
+                                                return (
+                                                    <a key={m.id} href={url} target="_blank" rel="noopener noreferrer" className="block p-3 rounded-lg bg-[var(--color-bg-elevated)] border border-[var(--color-border)] hover:bg-[var(--color-bg-hover)] transition-colors group">
+                                                        <div className="flex items-center gap-3 mb-1">
+                                                            <div className="w-7 h-7 rounded bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+                                                                <ExternalLink className="w-3.5 h-3.5 text-blue-500" />
+                                                            </div>
+                                                            <div className="text-[11px] font-bold text-[var(--color-text-primary)] truncate flex-1">{url}</div>
+                                                        </div>
+                                                        <p className="text-[10px] text-[var(--color-text-muted)] line-clamp-2 leading-tight pl-10">
+                                                            {m.text?.replace(url || '', '').trim() || 'No description available'}
+                                                        </p>
+                                                    </a>
+                                                )
+                                            })
+                                        ) : (
+                                            <div className="text-center py-10 opacity-50">
+                                                <ExternalLink className="w-10 h-10 mx-auto mb-2 text-[var(--color-text-muted)]" />
+                                                <p className="text-xs">No links found</p>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}
