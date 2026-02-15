@@ -49,6 +49,8 @@ class MessageResponse(BaseModel):
     is_outgoing: bool = False
     is_pinned: bool = False
     raw_json: Optional[str] = None
+    reactions: Optional[List[dict]] = None
+    web_page: Optional[dict] = None
 
 
 class MemberResponse(BaseModel):
@@ -203,6 +205,8 @@ async def get_messages(
                 is_outgoing=getattr(m, 'is_outgoing', False),
                 is_pinned=m.is_pinned,
                 raw_json=m.raw_json,
+                reactions=getattr(m, 'reactions', None),
+                web_page=getattr(m, 'web_page', None)
             )
             for m in messages
         ]
@@ -322,6 +326,8 @@ async def send_message(
             media_path=getattr(message, 'media_path', None),
             media_metadata=getattr(message, 'media_metadata', None),
             is_outgoing=True,
+            reactions=getattr(message, 'reactions', None),
+            web_page=getattr(message, 'web_page', None)
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -355,7 +361,9 @@ async def edit_message(
             reply_to_msg_id=m.reply_to_msg_id,
             has_media=m.has_media,
             is_outgoing=True,
-            is_pinned=m.is_pinned
+            is_pinned=m.is_pinned,
+            reactions=getattr(m, 'reactions', None),
+            web_page=getattr(m, 'web_page', None)
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to edit message: {str(e)}")
@@ -431,6 +439,26 @@ async def delete_message(
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete message: {str(e)}")
+
+
+class SendReactionRequest(BaseModel):
+    emoticon: Optional[str] = None
+
+
+@router.post("/{chat_id}/messages/{message_id}/reaction")
+async def send_reaction(
+    chat_id: int,
+    message_id: int,
+    request: SendReactionRequest,
+    session_id: Optional[int] = None,
+):
+    """Send a reaction to a message."""
+    try:
+        client = await session_manager.get_client(session_id)
+        await client.send_reaction(chat_id, message_id, request.emoticon)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to send reaction: {str(e)}")
 
 
 @router.post("/{chat_id}/send-media")

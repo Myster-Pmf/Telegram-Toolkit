@@ -60,6 +60,9 @@ class MessageInfo:
     is_outgoing: bool = False
     is_pinned: bool = False
     raw_json: Optional[str] = None  # For developer mode
+    reactions: Optional[List[dict]] = None
+    web_page: Optional[dict] = None  # site_name, title, description, photo_path, url
+  # [{'emoticon': '👍', 'count': 5}]
 
 
 class BaseTelegramClient(ABC):
@@ -490,145 +493,209 @@ class TelethonClientWrapper(BaseTelegramClient):
             messages_media_dir = media_dir_abs / "messages" / str(abs(chat_id))
             messages_media_dir.mkdir(parents=True, exist_ok=True)
         
-        result = []
-        for m in messages:
-            # Determine media type and extract metadata
-            media_type = None
-            media_metadata = None
-            
-            if m.photo: 
-                media_type = 'photo'
-                # Get largest photo size
-                if hasattr(m.photo, 'sizes') and m.photo.sizes:
-                    largest = max(m.photo.sizes, key=lambda s: getattr(s, 'size', 0) or 0)
-                    media_metadata = {
-                        'width': getattr(largest, 'w', None),
-                        'height': getattr(largest, 'h', None),
-                        'file_size': getattr(largest, 'size', None),
-                    }
-            elif m.video: 
-                media_type = 'video'
+    async def _to_message_info(
+        self, 
+        m: TelethonMessage, 
+        chat_id: int, 
+        download_media: bool = False,
+        messages_media_dir: Optional[Any] = None,
+        media_dir_abs: Optional[Any] = None
+    ) -> MessageInfo:
+        """Convert a Telethon message to a MessageInfo object."""
+        from pathlib import Path
+        
+        # Determine media type and extract metadata
+        media_type = None
+        media_metadata = None
+        
+        if m.photo: 
+            media_type = 'photo'
+            if hasattr(m.photo, 'sizes') and m.photo.sizes:
+                largest = max(m.photo.sizes, key=lambda s: getattr(s, 'size', 0) or 0)
                 media_metadata = {
-                    'file_name': getattr(m.video, 'file_name', None) or 'video',
-                    'file_size': getattr(m.video, 'size', None),
-                    'duration': getattr(m.video, 'duration', None),
-                    'width': getattr(m.video, 'w', None),
-                    'height': getattr(m.video, 'h', None),
-                    'mime_type': getattr(m.video, 'mime_type', None),
+                    'width': getattr(largest, 'w', None),
+                    'height': getattr(largest, 'h', None),
+                    'file_size': getattr(largest, 'size', None),
                 }
-            elif m.document: 
-                media_type = 'document'
-                media_metadata = {
-                    'file_name': getattr(m.document, 'file_name', None) or 'file',
-                    'file_size': getattr(m.document, 'size', None),
-                    'mime_type': getattr(m.document, 'mime_type', None),
-                }
-                # Check for file name in attributes
-                for attr in getattr(m.document, 'attributes', []):
-                    if hasattr(attr, 'file_name'):
-                        media_metadata['file_name'] = attr.file_name
-            elif m.voice: 
-                media_type = 'voice'
-                media_metadata = {
-                    'duration': getattr(m.voice, 'duration', None),
-                    'file_size': getattr(m.voice, 'size', None),
-                }
-            elif m.sticker: 
-                media_type = 'sticker'
-                media_metadata = {
-                    'emoji': getattr(m.sticker, 'emoji', None) if hasattr(m, 'sticker') else None,
-                }
-            elif m.gif: 
-                media_type = 'gif'
-            
-            # Download media (only if download_media is True)
-            media_path = None
-            if download_media and messages_media_dir:
-                try:
-                    existing_file = list(messages_media_dir.glob(f"{m.id}.*"))
-                    if existing_file:
-                        media_path = str(existing_file[0].relative_to(media_dir_abs)).replace("\\", "/")
-                    elif m.photo or m.sticker:
-                        # Download full photo/sticker
-                        downloaded = await self._client.download_media(
-                            m, 
-                            file=messages_media_dir / str(m.id)
-                        )
+        elif m.video: 
+            media_type = 'video'
+            media_metadata = {
+                'file_name': getattr(m.video, 'file_name', None) or 'video',
+                'file_size': getattr(m.video, 'size', None),
+                'duration': getattr(m.video, 'duration', None),
+                'width': getattr(m.video, 'w', None),
+                'height': getattr(m.video, 'h', None),
+                'mime_type': getattr(m.video, 'mime_type', None),
+            }
+        elif m.document: 
+            media_type = 'document'
+            media_metadata = {
+                'file_name': getattr(m.document, 'file_name', None) or 'file',
+                'file_size': getattr(m.document, 'size', None),
+                'mime_type': getattr(m.document, 'mime_type', None),
+            }
+            for attr in getattr(m.document, 'attributes', []):
+                if hasattr(attr, 'file_name'):
+                    media_metadata['file_name'] = attr.file_name
+        elif m.voice: 
+            media_type = 'voice'
+            media_metadata = {
+                'duration': getattr(m.voice, 'duration', None),
+                'file_size': getattr(m.voice, 'size', None),
+            }
+        elif m.sticker: 
+            media_type = 'sticker'
+            media_metadata = {
+                'emoji': getattr(m.sticker, 'emoji', None) if hasattr(m, 'sticker') else None,
+            }
+        elif m.gif: 
+            media_type = 'gif'
+
+        # Download media
+        media_path = None
+        if download_media and messages_media_dir and media_dir_abs:
+            try:
+                existing_file = list(messages_media_dir.glob(f"{m.id}.*"))
+                if existing_file:
+                    media_path = str(existing_file[0].relative_to(media_dir_abs)).replace("\\", "/")
+                elif m.photo or m.sticker:
+                    downloaded = await self._client.download_media(m, file=messages_media_dir / str(m.id))
+                    if downloaded:
+                        media_path = str(Path(downloaded).resolve().relative_to(media_dir_abs)).replace("\\", "/")
+                elif m.video or m.document or m.gif:
+                    thumb_path = messages_media_dir / f"{m.id}_thumb.jpg"
+                    if not thumb_path.exists():
+                        downloaded = await self._client.download_media(m, file=thumb_path, thumb=-1)
                         if downloaded:
                             media_path = str(Path(downloaded).resolve().relative_to(media_dir_abs)).replace("\\", "/")
-                    elif m.video or m.document or m.gif:
-                        # Download just the thumbnail for videos/documents/gifs
-                        thumb_path = messages_media_dir / f"{m.id}_thumb.jpg"
-                        if not thumb_path.exists():
-                            downloaded = await self._client.download_media(
-                                m, 
-                                file=thumb_path,
-                                thumb=-1  # Download smallest thumb
-                            )
-                            if downloaded:
-                                media_path = str(Path(downloaded).resolve().relative_to(media_dir_abs)).replace("\\", "/")
-                        else:
-                            media_path = str(thumb_path.relative_to(media_dir_abs)).replace("\\", "/")
+                    else:
+                        media_path = str(thumb_path.relative_to(media_dir_abs)).replace("\\", "/")
+            except Exception as e:
+                print(f"Error downloading media for message {m.id}: {e}")
+
+        # Get sender info
+        sender_name = "Unknown"
+        sender_photo = None
+        try:
+            sender = await m.get_sender()
+            if sender:
+                if hasattr(sender, 'title'):
+                    sender_name = sender.title
+                elif hasattr(sender, 'first_name'):
+                    name_parts = [p for p in [sender.first_name, sender.last_name] if p]
+                    sender_name = " ".join(name_parts)
+                    if not sender_name and sender.username:
+                        sender_name = sender.username
+                # Load sender photo path if it exists (cached in models usually, but for now just name)
+        except Exception:
+            pass
+
+        # Extract reactions
+        reactions_list = []
+        if getattr(m, 'reactions', None):
+            for r in m.reactions.results:
+                if hasattr(r.reaction, 'emoticon'):
+                    reactions_list.append({
+                        'emoticon': r.reaction.emoticon,
+                        'count': r.count,
+                        'chosen': getattr(r, 'chosen_order', None) is not None
+                    })
+
+        # Extract WebPage info
+        web_page_info = None
+        from telethon.tl.types import MessageMediaWebPage, WebPage
+        if isinstance(m.media, MessageMediaWebPage) and isinstance(m.media.webpage, WebPage):
+            wp = m.media.webpage
+            web_page_info = {
+                'url': wp.url,
+                'display_url': wp.display_url,
+                'site_name': wp.site_name,
+                'title': wp.title,
+                'description': wp.description,
+            }
+            # Download thumb if exists
+            if wp.photo:
+                try:
+                    wp_thumb_dir = media_dir_abs / "webpages"
+                    wp_thumb_dir.mkdir(parents=True, exist_ok=True)
+                    downloaded = await self._client.download_media(wp.photo, file=wp_thumb_dir / f"wp_{m.id}")
+                    if downloaded:
+                        web_page_info['photo_path'] = str(Path(downloaded).resolve().relative_to(media_dir_abs)).replace("\\", "/")
                 except Exception as e:
-                    print(f"Error downloading media for message {m.id}: {e}")
-            
-            # Get sender info
-            sender_name = "Unknown"
-            try:
-                sender = await m.get_sender()
-                if sender:
-                    if hasattr(sender, 'title'):
-                        sender_name = sender.title
-                    elif hasattr(sender, 'first_name'):
-                        name_parts = [p for p in [sender.first_name, sender.last_name] if p]
-                        sender_name = " ".join(name_parts)
-                        if not sender_name and sender.username:
-                            sender_name = sender.username
-            except Exception:
-                pass
-            
-            result.append(MessageInfo(
-                id=m.id,
-                chat_id=chat_id,
-                sender_id=m.sender_id,
-                sender_name=sender_name,
-                sender_photo=None, 
-                text=m.message,
-                date=m.date,
-                edit_date=m.edit_date,
-                reply_to_msg_id=m.reply_to_msg_id,
-                forward_from_id=m.fwd_from.from_id if m.fwd_from else None,
-                has_media=bool(m.media),
-                media_type=media_type,
-                media_path=media_path,
-                media_metadata=media_metadata,
-                is_outgoing=m.out,
-                is_pinned=m.pinned or False,
-                raw_json=m.to_json() if hasattr(m, 'to_json') else None
-            ))
+                    print(f"Error downloading web_page thumb for message {m.id}: {e}")
+
+        raw_json = m.to_json() if hasattr(m, 'to_json') else None
+
+        return MessageInfo(
+            id=m.id,
+            chat_id=chat_id,
+            sender_id=m.sender_id,
+            sender_name=sender_name,
+            sender_photo=sender_photo,
+            text=m.message,
+            date=m.date,
+            edit_date=m.edit_date,
+            reply_to_msg_id=m.reply_to_msg_id,
+            forward_from_id=getattr(m.fwd_from, 'from_id', None) if m.fwd_from else None,
+            has_media=bool(m.media) and not isinstance(m.media, MessageMediaWebPage), # Don't treat purely as media if it's a link preview
+            media_type=media_type if not isinstance(m.media, MessageMediaWebPage) else None,
+            media_path=media_path if not isinstance(m.media, MessageMediaWebPage) else None,
+            media_metadata=media_metadata if not isinstance(m.media, MessageMediaWebPage) else None,
+            is_outgoing=m.out,
+            is_pinned=m.pinned or False,
+            raw_json=raw_json,
+            reactions=reactions_list if reactions_list else None,
+            web_page=web_page_info
+        )
+
+    async def get_messages(
+        self, 
+        chat_id: int, 
+        limit: int = 100,
+        offset_id: int = 0,
+        min_id: int = 0,
+        max_id: int = 0,
+        download_media: bool = True,
+    ) -> List[MessageInfo]:
+        """Get messages from a chat."""
+        from pathlib import Path
+        messages = await self._client.get_messages(chat_id, limit=limit, offset_id=offset_id, min_id=min_id, max_id=max_id)
+        
+        media_dir_abs = Path(settings.media_dir).resolve()
+        messages_media_dir = None
+        if download_media:
+            messages_media_dir = media_dir_abs / "messages" / str(abs(chat_id))
+            messages_media_dir.mkdir(parents=True, exist_ok=True)
+        
+        result = []
+        for m in messages:
+            info = await self._to_message_info(m, chat_id, download_media, messages_media_dir, media_dir_abs)
+            result.append(info)
             
         return result
     
     async def send_message(self, chat_id: int, text: str, reply_to: int = None) -> MessageInfo:
         """Send a message to a chat."""
         m = await self._client.send_message(chat_id, text, reply_to=reply_to)
+        return await self._to_message_info(m, chat_id)
+
+    async def edit_message(self, chat_id: int, message_id: int, text: str) -> MessageInfo:
+        """Edit a message's text."""
+        m = await self._client.edit_message(chat_id, message_id, text)
+        return await self._to_message_info(m, chat_id)
+
+    async def send_reaction(self, chat_id: int, message_id: int, emoticon: Optional[str] = None) -> bool:
+        """Send a reaction to a message."""
+        from telethon.tl.functions.messages import SendReactionRequest
+        from telethon.tl.types import ReactionEmoji
         
-        return MessageInfo(
-            id=m.id,
-            chat_id=chat_id,
-            sender_id=m.sender_id,
-            sender_name="Me",
-            sender_photo=None,
-            text=m.message,
-            date=m.date,
-            reply_to_msg_id=m.reply_to_msg_id,
-            forward_from_id=None,
-            has_media=False,
-            media_type=None,
-            media_path=None,
-            media_metadata=None,
-            is_outgoing=True
-        )
+        reaction = [ReactionEmoji(emoticon=emoticon)] if emoticon else []
+        await self._client(SendReactionRequest(
+            peer=chat_id,
+            msg_id=message_id,
+            reaction=reaction
+        ))
+        return True
     
     async def download_media(self, message: Any, path: str = None) -> Optional[str]:
         """Download media from a message."""

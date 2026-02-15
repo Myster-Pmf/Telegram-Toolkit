@@ -16,6 +16,7 @@ def main():
         host=settings.host,
         port=settings.port,
         reload=settings.debug,
+        timeout_graceful_shutdown=5,
     )
 
 

@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
-import { Search, Settings, Users, Image, FileText, Send, Copy, Download, AlertCircle, MessageSquare, Play, X, Languages, Paperclip, Pin, Reply, Trash2, Edit3, Code, Terminal, Database, Check } from 'lucide-react'
+import { Search, Settings, Users, Image as ImageIcon, FileText, Send, Copy, Download, AlertCircle, MessageSquare, Play, X, Languages, Paperclip, Pin, Reply, Trash2, Edit3, Terminal, Database, Check, ChevronDown, Share2, ExternalLink, Flag, MousePointer2, Code } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import { cloneChat, exportChat, fetchChats, fetchMessages, fetchChatMembers, getMediaStreamUrl, getMediaDownloadUrl, fetchChatPhoto, sendMessage, translateText, sendMedia, editMessage, deleteMessage, pinMessage, unpinMessage, fetchPinnedMessage } from '../lib/api'
+import { cloneChat, exportChat, fetchChats, fetchMessages, fetchChatMembers, getMediaStreamUrl, getMediaDownloadUrl, fetchChatPhoto, sendMessage, translateText, sendMedia, editMessage, deleteMessage, pinMessage, unpinMessage, getPinnedMessage, sendReaction } from '../lib/api'
 import type { Chat, Message, Member } from '../lib/api'
 
 type RightPanelTab = 'members' | 'media' | 'files' | 'links' | 'settings' | 'export' | 'clone'
@@ -49,9 +49,15 @@ export default function Chats() {
     })
 
     // Enhanced Features State
-    const [isDevMode, setIsDevMode] = useState(false)
+    const [isDevMode, setIsDevMode] = useState(() => localStorage.getItem('isDevMode') === 'true')
+
+    useEffect(() => {
+        localStorage.setItem('isDevMode', isDevMode.toString())
+    }, [isDevMode])
+
     const [replyToMessage, setReplyToMessage] = useState<Message | null>(null)
     const [editingMessage, setEditingMessage] = useState<Message | null>(null)
+    const [showScrollBottom, setShowScrollBottom] = useState(false)
     const [pinnedMessage, setPinnedMessage] = useState<Message | null>(null)
     const [contextMenu, setContextMenu] = useState<{ x: number, y: number, message: Message } | null>(null)
     const [showRawJson, setShowRawJson] = useState<string | null>(null)
@@ -132,7 +138,7 @@ export default function Chats() {
                 .then(msgs => {
                     // Check if we're still on the same chat
                     if (abortControllerRef.current?.signal.aborted) return
-                    const sorted = ensureUniqueMessages(msgs)
+                    const sorted = ensureUniqueMessages(msgs, currentChatId)
                     setMessages(sorted)
                     setTimeout(() => scrollToBottom(), 100)
 
@@ -142,7 +148,7 @@ export default function Chats() {
                         fetchMessages(currentChatId, oldestId, 35)
                             .then(moreMsgs => {
                                 if (abortControllerRef.current?.signal.aborted) return
-                                setMessages(prev => ensureUniqueMessages([...moreMsgs, ...prev]))
+                                setMessages(prev => ensureUniqueMessages([...moreMsgs, ...prev], currentChatId))
                             })
                             .catch(() => { }) // Silently ignore aborted requests
                     }
@@ -159,7 +165,7 @@ export default function Chats() {
                 })
 
             // Fetch Pinned Message
-            fetchPinnedMessage(currentChatId)
+            getPinnedMessage(currentChatId)
                 .then(m => {
                     if (!abortControllerRef.current?.signal.aborted) setPinnedMessage(m)
                 })
@@ -219,10 +225,7 @@ export default function Chats() {
                         const msg = data.data
                         const currentChatId = selectedChatIdRef.current
                         if (msg.chat_id === currentChatId) {
-                            setMessages(prev => {
-                                if (prev.some(m => m.id === msg.id)) return prev
-                                return [...prev, msg]
-                            })
+                            setMessages(prev => ensureUniqueMessages([...prev, msg], currentChatId))
                             setTimeout(() => scrollToBottom(), 100)
                         }
                     } else if (data.type === 'message_edited' && data.data) {
@@ -261,14 +264,34 @@ export default function Chats() {
         }
     }, []) // Only run once on mount
 
-    const ensureUniqueMessages = (msgs: Message[]) => {
+    // Deterministic color generation for users
+    const getUserColor = (userId: number | null | undefined) => {
+        if (!userId) return 'text-[var(--color-accent)]';
+        const colors = [
+            'text-red-400', 'text-orange-400', 'text-amber-400',
+            'text-green-400', 'text-emerald-400', 'text-teal-400',
+            'text-cyan-400', 'text-blue-400', 'text-indigo-400',
+            'text-violet-400', 'text-purple-400', 'text-fuchsia-400',
+            'text-pink-400', 'text-rose-400'
+        ];
+        return colors[userId % colors.length];
+    };
+
+    const ensureUniqueMessages = (msgs: Message[], currentChatId: number | null) => {
+        if (!currentChatId) return [];
         const unique = new Map();
-        msgs.forEach(m => unique.set(m.id, m));
-        // Sort by date first, then by ID as tiebreaker (higher ID = newer)
+        msgs.forEach(m => {
+            if (!m.id || m.chat_id !== currentChatId) return; // Strict isolation
+            const existing = unique.get(m.id);
+            // Merge metadata if message already exists (to preserve local reactions during sync)
+            unique.set(m.id, existing ? { ...existing, ...m } : m);
+        });
+
         return Array.from(unique.values()).sort((a, b) => {
-            const dateDiff = new Date(a.date).getTime() - new Date(b.date).getTime();
-            if (dateDiff !== 0) return dateDiff;
-            return a.id - b.id; // Same date: sort by ID ascending (older ID first)
+            const timeA = new Date(a.date).getTime();
+            const timeB = new Date(b.date).getTime();
+            if (timeA !== timeB) return timeA - timeB;
+            return a.id - b.id;
         });
     }
 
@@ -279,17 +302,18 @@ export default function Chats() {
     }
 
     // Infinite Scroll Handler
-    const handleScroll = async () => {
-        if (!messageContainerRef.current || isLoadingOlder || messages.length === 0) return
+    const handleScroll = async (e: React.UIEvent<HTMLDivElement>) => {
+        const container = e.currentTarget
+        const isAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 100
+        setShowScrollBottom(!isAtBottom)
 
-        // If scrolled to top
-        if (messageContainerRef.current.scrollTop === 0) {
+        if (container.scrollTop === 0 && !isLoadingOlder && messages.length > 0) {
             const oldestMessageId = messages[0].id // Since we sort oldest to newest, [0] is oldest
             console.log("Fetching older messages than ID:", oldestMessageId)
 
             setIsLoadingOlder(true)
             // Save scroll height to restore position
-            const oldScrollHeight = messageContainerRef.current.scrollHeight
+            const oldScrollHeight = messageContainerRef.current!.scrollHeight
 
             try {
                 // We need to fetch messages older than the oldest one we have.
@@ -304,7 +328,7 @@ export default function Chats() {
 
                     setMessages(prev => {
                         const merged = [...prev, ...olderMessages]
-                        return ensureUniqueMessages(merged)
+                        return ensureUniqueMessages(merged, selectedChatId)
                     })
 
                     // Restore scroll position
@@ -367,11 +391,11 @@ export default function Chats() {
             let sentMessage: Message;
             if (editingMessage) {
                 sentMessage = await editMessage(selectedChatId, editingMessage.id, messageInput.trim());
-                setMessages(prev => prev.map(m => m.id === sentMessage.id ? sentMessage : m));
+                setMessages(prev => ensureUniqueMessages(prev.map(m => m.id === sentMessage.id ? sentMessage : m), selectedChatId));
                 setEditingMessage(null);
             } else {
                 sentMessage = await sendMessage(selectedChatId, messageInput.trim(), replyToMessage?.id)
-                setMessages(prev => [...prev, sentMessage])
+                setMessages(prev => ensureUniqueMessages([...prev, sentMessage], selectedChatId))
             }
             setMessageInput('')
             setReplyToMessage(null)
@@ -414,6 +438,46 @@ export default function Chats() {
             alert('Failed to update pin status');
         }
     }
+
+    const handleReaction = async (messageId: number, emoticon: string) => {
+        if (!selectedChatId) return;
+
+        // Optimistically update local state immediately
+        setMessages(prev => prev.map(m => {
+            if (m.id !== messageId) return m;
+
+            const reactions = [...(m.reactions || [])];
+            const rIdx = reactions.findIndex(r => r.emoticon === emoticon);
+
+            if (rIdx >= 0) {
+                const r = { ...reactions[rIdx] };
+                if (r.chosen) {
+                    r.count = Math.max(0, r.count - 1);
+                    r.chosen = false;
+                } else {
+                    r.count += 1;
+                    r.chosen = true;
+                }
+
+                if (r.count === 0) reactions.splice(rIdx, 1);
+                else reactions[rIdx] = r;
+            } else {
+                reactions.push({ emoticon, count: 1, chosen: true });
+            }
+
+            return { ...m, reactions };
+        }));
+
+        try {
+            await sendReaction(selectedChatId, messageId, emoticon);
+            // No need to re-fetch all, the WS or periodic sync will confirm it
+        } catch (err) {
+            console.error('Failed to toggle reaction:', err);
+            // Re-fetch only this chat's recent messages to sync on error
+            const msgs = await fetchMessages(selectedChatId, 0, 15);
+            setMessages(prev => ensureUniqueMessages([...prev, ...msgs], selectedChatId));
+        }
+    };
 
     return (
         <>
@@ -610,22 +674,51 @@ export default function Chats() {
 
                         {messages.map((msg: Message, idx) => {
                             const isPrevSameSender = idx > 0 && messages[idx - 1].sender_id === msg.sender_id && (new Date(msg.date).getTime() - new Date(messages[idx - 1].date).getTime() < 300000);
+                            const isNextSameSender = idx < messages.length - 1 && messages[idx + 1].sender_id === msg.sender_id && (new Date(messages[idx + 1].date).getTime() - new Date(msg.date).getTime() < 300000);
+                            const showAvatar = !msg.is_outgoing && !isNextSameSender && (selectedChat?.chat_type === 'group' || selectedChat?.chat_type === 'supergroup');
 
                             return (
                                 <div
                                     key={msg.id}
+                                    id={`msg-${msg.id}`}
                                     className={`flex group/msg ${msg.is_outgoing ? 'justify-end' : 'justify-start'} ${isPrevSameSender ? 'mt-0.5' : 'mt-3'}`}
                                     onContextMenu={(e) => {
                                         e.preventDefault();
                                         setContextMenu({ x: e.clientX, y: e.clientY, message: msg });
                                     }}
                                 >
+                                    {/* Avatar Column (Incoming Group Messages) */}
+                                    {!msg.is_outgoing && (selectedChat?.chat_type === 'group' || selectedChat?.chat_type === 'supergroup') && (
+                                        <div className={`flex-shrink-0 w-8 h-8 mr-2 flex items-end ${!showAvatar ? 'invisible' : ''}`}>
+                                            <div className="w-8 h-8 rounded-full bg-[var(--color-bg-elevated)] flex items-center justify-center overflow-hidden">
+                                                {/* We don't have sender photo in Message object yet, using initial or generic */}
+                                                <span className={`text-[10px] font-bold ${getUserColor(msg.sender_id)}`}>
+                                                    {(msg.sender_name || '?').charAt(0).toUpperCase()}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div
-                                        className={`relative group max-w-[70%] px-3 py-1.5 shadow-sm transition-all ${msg.is_outgoing
-                                            ? `bg-[var(--color-accent)] text-white ${isPrevSameSender ? 'rounded-lg' : 'rounded-l-lg rounded-tr-lg'}`
-                                            : `bg-[var(--color-bg-panel)] border border-[var(--color-border)] ${isPrevSameSender ? 'rounded-lg' : 'rounded-r-lg rounded-tl-lg'}`
+                                        onClick={(e) => {
+                                            // Only open if clicking the bubble background or text, not buttons
+                                            if ((e.target as HTMLElement).closest('button, a')) return;
+                                            setContextMenu({ x: e.clientX, y: e.clientY, message: msg });
+                                        }}
+                                        className={`max-w-[85%] lg:max-w-[70%] rounded-2xl p-2.5 px-3 relative shadow-sm transition-all group overflow-hidden cursor-pointer active:scale-[0.99] origin-center ${msg.is_outgoing
+                                            ? 'bg-[#766ac8] text-white rounded-tr-none'
+                                            : 'bg-[#2b2b2b] text-[var(--color-text-primary)] rounded-tl-none'
                                             }`}
                                     >
+                                        {!msg.is_outgoing && selectedChat?.chat_type !== 'private' && (
+                                            <div className="flex items-center gap-2 mb-1">
+                                                {isDevMode && <span className="text-[9px] font-mono text-blue-400">#{msg.sender_id}</span>}
+                                                <div className={`text-[10px] font-bold cursor-pointer hover:underline uppercase tracking-tight ${getUserColor(msg.sender_id)}`}>
+                                                    {msg.sender_name || 'User ' + (msg.sender_id || '')}
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {/* Reply Icon Hover */}
                                         <button
                                             onClick={() => setReplyToMessage(msg)}
@@ -638,37 +731,49 @@ export default function Chats() {
                                         {!isPrevSameSender && (
                                             <div
                                                 className={`absolute top-0 w-2 h-2 ${msg.is_outgoing
-                                                    ? 'right-[-2px] bg-[var(--color-accent)] [clip-path:polygon(0_0,100%_0,0_100%)]'
-                                                    : 'left-[-4px] bg-[var(--color-bg-panel)] border-l border-t border-[var(--color-border)] [clip-path:polygon(0_0,100%_0,100%_100%)]'}`}
+                                                    ? 'right-[-2px] bg-[#766ac8] [clip-path:polygon(0_0,100%_0,0_100%)]'
+                                                    : 'left-[-4px] bg-[#2b2b2b] [clip-path:polygon(0_0,100%_0,100%_100%)]'}`}
                                             />
-                                        )}
-
-                                        {!msg.is_outgoing && !isPrevSameSender && (
-                                            <div className="flex items-center gap-2 mb-1">
-                                                {isDevMode && <span className="text-[9px] font-mono text-blue-400">#{msg.sender_id}</span>}
-                                                <div className="text-[10px] font-bold text-[var(--color-accent)] uppercase tracking-tight">
-                                                    {msg.sender_name || 'User ' + (msg.sender_id || '')}
-                                                </div>
-                                            </div>
                                         )}
 
                                         {/* Reply Preview in Message */}
                                         {msg.reply_to_msg_id && (
-                                            <div className={`mb-1.5 p-1.5 rounded-md border-l-2 text-[11px] bg-black/5 opacity-80 cursor-pointer hover:bg-black/10 transition-colors ${msg.is_outgoing ? 'border-white/50' : 'border-[var(--color-accent)]'}`}>
-                                                <div className="font-bold opacity-60">Replied to message #{msg.reply_to_msg_id}</div>
-                                                <div className="truncate opacity-80">Click to jump</div>
+                                            <div
+                                                className={`mb-1.5 p-1.5 py-1 px-2.5 rounded-md border-l-[3px] text-[11px] bg-black/10 cursor-pointer hover:bg-black/20 transition-all flex flex-col gap-0.5 ${msg.is_outgoing ? 'border-white/60' : 'border-[var(--color-accent)]'}`}
+                                                onClick={() => {
+                                                    const target = document.getElementById(`msg-${msg.reply_to_msg_id}`);
+                                                    if (target) {
+                                                        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                        target.classList.add('ring-2', 'ring-[var(--color-accent)]', 'ring-offset-2');
+                                                        setTimeout(() => target.classList.remove('ring-2', 'ring-[var(--color-accent)]', 'ring-offset-2'), 2000);
+                                                    }
+                                                }}
+                                            >
+                                                {(() => {
+                                                    const repliedMsg = messages.find(m => m.id === msg.reply_to_msg_id);
+                                                    return (
+                                                        <>
+                                                            <div className={`font-bold text-[10px] leading-tight ${getUserColor(repliedMsg?.sender_id)}`}>
+                                                                {repliedMsg?.sender_name || `User ${msg.reply_to_msg_id}`}
+                                                            </div>
+                                                            <div className="truncate opacity-70 text-[10px] italic">
+                                                                {repliedMsg?.text || (repliedMsg?.has_media ? '[Media]' : 'Original message not found')}
+                                                            </div>
+                                                        </>
+                                                    );
+                                                })()}
                                             </div>
                                         )}
 
+                                        {/* Media Layout: Media top, Text bottom if both exist */}
                                         {msg.has_media && (
-                                            /* Existing media rendering... kept same but wrapped in container */
-                                            <div className="mb-1 rounded overflow-hidden relative group/media">
+                                            <div className="mb-2 -mx-3 -mt-2.5 rounded-t-xl overflow-hidden relative group/media">
                                                 {msg.media_path ? (
                                                     <div className="relative">
                                                         <img
                                                             src={getAvatarUrl(msg.media_path)!}
                                                             alt={msg.media_type || 'Media'}
-                                                            className="max-w-full max-h-80 rounded object-contain cursor-pointer hover:opacity-95 transition-opacity"
+                                                            className="w-full max-h-[450px] object-cover cursor-pointer hover:opacity-95 transition-opacity"
                                                             onClick={() => {
                                                                 if (msg.media_type === 'video') {
                                                                     setVideoModal({ chatId: msg.chat_id, messageId: msg.id, title: msg.media_metadata?.file_name })
@@ -679,46 +784,111 @@ export default function Chats() {
                                                         />
                                                         {msg.media_type === 'video' && (
                                                             <div className="absolute inset-0 flex items-center justify-center cursor-pointer" onClick={() => setVideoModal({ chatId: msg.chat_id, messageId: msg.id, title: msg.media_metadata?.file_name })}>
-                                                                <div className="w-10 h-10 rounded-full bg-black/40 flex items-center justify-center hover:bg-black/60 transition-colors">
-                                                                    <Play className="w-5 h-5 text-white fill-white" />
+                                                                <div className="w-12 h-12 rounded-full bg-black/40 flex items-center justify-center hover:bg-black/60 transition-colors backdrop-blur-sm">
+                                                                    <Play className="w-6 h-6 text-white fill-white" />
                                                                 </div>
                                                             </div>
                                                         )}
-                                                        <a href={getMediaDownloadUrl(msg.chat_id, msg.id)} download className="absolute top-1 right-1 p-1 rounded bg-black/40 text-white opacity-0 group-hover/media:opacity-100 transition-opacity hover:bg-black/60" onClick={(e) => e.stopPropagation()}>
-                                                            <Download className="w-3.5 h-3.5" />
-                                                        </a>
                                                     </div>
                                                 ) : (
-                                                    <div className="p-2 bg-black/10 rounded flex items-center gap-2">
-                                                        <div className="w-8 h-8 rounded bg-[var(--color-accent-dim)] flex items-center justify-center flex-shrink-0">
-                                                            {msg.media_type === 'video' ? <Play className="w-4 h-4 text-[var(--color-accent)]" /> : <Image className="w-4 h-4 text-[var(--color-accent)]" />}
+                                                    <div className="p-3 bg-black/10 flex items-center gap-3">
+                                                        <div className="w-10 h-10 rounded-lg bg-[var(--color-accent-dim)] flex items-center justify-center flex-shrink-0">
+                                                            {msg.media_type === 'video' ? <Play className="w-5 h-5 text-[var(--color-accent)]" /> : <ImageIcon className="w-5 h-5 text-[var(--color-accent)]" />}
                                                         </div>
                                                         <div className="overflow-hidden flex-1">
-                                                            <div className="text-[11px] font-medium truncate">{msg.media_metadata?.file_name || msg.media_type || 'Media'}</div>
-                                                            <div className="text-[9px] opacity-60">{(msg.media_metadata?.file_size || 0) / 1024 > 1024 ? ((msg.media_metadata?.file_size || 0) / (1024 * 1024)).toFixed(1) + 'MB' : Math.round((msg.media_metadata?.file_size || 0) / 1024) + 'KB'}</div>
+                                                            <div className="text-xs font-semibold truncate">{msg.media_metadata?.file_name || msg.media_type || 'Media'}</div>
+                                                            <div className="text-[10px] opacity-60">{(msg.media_metadata?.file_size || 0) / 1024 > 1024 ? ((msg.media_metadata?.file_size || 0) / (1024 * 1024)).toFixed(1) + 'MB' : Math.round((msg.media_metadata?.file_size || 0) / 1024) + 'KB'}</div>
                                                         </div>
-                                                        <a href={getMediaDownloadUrl(msg.chat_id, msg.id)} download className="p-1 rounded bg-[var(--color-bg-elevated)] border border-[var(--color-border)] text-muted hover:text-primary transition-colors">
-                                                            <Download className="w-3.5 h-3.5" />
-                                                        </a>
                                                     </div>
                                                 )}
                                             </div>
                                         )}
 
-                                        <div className="text-sm leading-snug whitespace-pre-wrap break-words">{msg.text}</div>
+                                        {/* Link Preview (WebPage) */}
+                                        {msg.web_page && (
+                                            <div className={`mb-2 p-2 rounded-lg border-l-2 flex flex-col gap-1.5 transition-colors cursor-pointer hover:bg-black/5 ${msg.is_outgoing ? 'bg-black/10 border-white/40' : 'bg-white/5 border-[var(--color-accent)]'}`} onClick={() => window.open(msg.web_page?.url, '_blank')}>
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div className="flex flex-col min-w-0">
+                                                        <span className="text-[10px] font-bold text-[var(--color-accent)] uppercase tracking-wider">{msg.web_page.site_name || 'Telegram'}</span>
+                                                        <span className="text-xs font-bold leading-tight truncate">{msg.web_page.title}</span>
+                                                    </div>
+                                                    {msg.web_page.photo_path && (
+                                                        <img src={getAvatarUrl(msg.web_page.photo_path)!} className="w-12 h-12 rounded-md object-cover flex-shrink-0" alt="preview" />
+                                                    )}
+                                                </div>
+                                                {msg.web_page.description && (
+                                                    <p className="text-[11px] leading-snug opacity-80 line-clamp-3">{msg.web_page.description}</p>
+                                                )}
+                                                {msg.web_page.url.includes('t.me/') && (
+                                                    <div className="pt-1 mt-1 border-t border-black/5 text-center">
+                                                        <span className="text-[10px] font-bold text-[var(--color-accent)] uppercase tracking-widest">{msg.web_page.url.includes('/s/') ? 'VIEW CHANNEL' : 'VIEW GROUP'}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
 
-                                        <div className={`flex items-center gap-1.5 text-[9px] mt-1 ${msg.is_outgoing ? 'text-white/60' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors'}`}>
-                                            {isDevMode && <span className="font-mono">#{msg.id}</span>}
-                                            <span>{new Date(msg.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                            {msg.edit_date && <span className="font-medium italic">Edited</span>}
-                                            {msg.is_pinned && <Pin className="w-2.5 h-2.5 fill-current" />}
-                                            {msg.is_outgoing && <Check className="w-2.5 h-2.5" />}
-                                        </div>
+                                        {msg.text && (
+                                            <div className="text-sm leading-snug whitespace-pre-wrap break-words min-w-[80px]">
+                                                {msg.text}
+                                                <div className={`float-right flex items-center justify-end gap-1 text-[10px] leading-none pt-2 pl-2 h-4 select-none ${msg.is_outgoing ? 'text-white/60' : 'text-[var(--color-text-muted)]'}`}>
+                                                    {msg.edit_date && (new Date(msg.edit_date).getTime() - new Date(msg.date).getTime() > 5000) && (
+                                                        <span className="opacity-70 italic text-[9px] mr-0.5">edited</span>
+                                                    )}
+                                                    <span>{new Date(msg.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                    {msg.is_outgoing && (
+                                                        <div className="flex -space-x-1.5 ml-0.5">
+                                                            <Check className="w-3 h-3" />
+                                                            <Check className="w-3 h-3" />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Fallback for media without text: ensure timestamp is visible */}
+                                        {!msg.text && (
+                                            <div className="absolute bottom-1 right-1 flex items-center gap-1 text-[10px] leading-none bg-black/30 backdrop-blur-md px-2 py-1 rounded-full text-white/90 shadow-sm border border-white/5">
+                                                <span>{new Date(msg.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                {msg.is_outgoing && <Check className="w-3 h-3" />}
+                                            </div>
+                                        )}
+
+                                        {/* Reactions */}
+                                        {msg.reactions && msg.reactions.length > 0 && (
+                                            <div className="flex flex-wrap gap-1 mt-1.5 -mb-0.5">
+                                                {msg.reactions.map((r, idx) => (
+                                                    <button
+                                                        key={idx}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleReaction(msg.id, r.emoticon);
+                                                        }}
+                                                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] transition-all hover:scale-110 active:scale-95 ${r.chosen
+                                                            ? 'bg-[var(--color-accent)] text-white shadow-sm ring-1 ring-white/20'
+                                                            : 'bg-black/10 hover:bg-black/20 text-[var(--color-text-primary)]'
+                                                            }`}
+                                                    >
+                                                        <span>{r.emoticon}</span>
+                                                        <span className="font-bold opacity-80">{r.count}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             );
                         })}
                     </div>
+
+                    {/* Scroll to Bottom Button */}
+                    {showScrollBottom && (
+                        <button
+                            onClick={scrollToBottom}
+                            className="absolute bottom-24 right-6 w-10 h-10 rounded-full bg-[var(--color-bg-panel)] border border-[var(--color-border)] shadow-xl flex items-center justify-center text-[var(--color-text-primary)] hover:bg-[var(--color-bg-elevated)] transition-all animate-in zoom-in-50 duration-200 z-10"
+                        >
+                            <ChevronDown className="w-6 h-6" />
+                        </button>
+                    )}
 
                     {/* Message Input Container */}
                     <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-panel)] relative">
@@ -776,7 +946,7 @@ export default function Chats() {
                                             await sendMedia(selectedChatId, file, '')
                                             // Refresh messages
                                             const msgs = await fetchMessages(selectedChatId, 0, 15)
-                                            setMessages(ensureUniqueMessages(msgs))
+                                            setMessages(ensureUniqueMessages(msgs, selectedChatId))
                                             setTimeout(() => scrollToBottom(), 100)
                                         } catch (err) {
                                             console.error('Failed to send file:', err)
@@ -840,7 +1010,7 @@ export default function Chats() {
                         <div className="flex border-b border-[var(--color-border)] overflow-x-auto no-scrollbar">
                             {[
                                 { id: 'members', icon: Users, label: 'Members' },
-                                { id: 'media', icon: Image, label: 'Media' },
+                                { id: 'media', icon: ImageIcon, label: 'Media' },
                                 { id: 'files', icon: FileText, label: 'Files' },
                                 { id: 'settings', icon: Settings, label: 'Settings' },
                             ].map((tab) => (
@@ -1181,14 +1351,26 @@ export default function Chats() {
             {/* Message Context Menu */}
             {contextMenu && (
                 <div
-                    className="fixed z-[60] w-48 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-lg shadow-xl py-1 overflow-hidden animate-in fade-in zoom-in duration-100"
-                    style={{ left: Math.min(contextMenu.x, window.innerWidth - 200), top: Math.min(contextMenu.y, window.innerHeight - 300) }}
+                    className="fixed z-[60] w-52 bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-lg shadow-xl py-1 overflow-hidden animate-in fade-in zoom-in duration-100"
+                    style={{ left: Math.min(contextMenu.x, window.innerWidth - 220), top: Math.min(contextMenu.y, window.innerHeight - 450) }}
                 >
+                    <div className="flex items-center justify-around px-2 py-2 border-b border-[var(--color-border)] bg-black/5">
+                        {['😊', '👀', '😁', '🤣', '😢', '❤️', '🔥'].map(emoji => (
+                            <button
+                                key={emoji}
+                                onClick={() => { handleReaction(contextMenu.message.id, emoji); setContextMenu(null); }}
+                                className="text-lg hover:scale-125 transition-transform active:scale-90 p-1"
+                            >
+                                {emoji}
+                            </button>
+                        ))}
+                        <button className="p-1 opacity-50 hover:opacity-100"><ChevronDown className="w-4 h-4" /></button>
+                    </div>
                     <button
                         onClick={() => { setReplyToMessage(contextMenu.message); setContextMenu(null); }}
-                        className="w-full px-3 py-1.5 flex items-center gap-2 text-xs text-[var(--color-text-primary)] hover:bg-[var(--color-accent)] hover:text-white transition-colors"
+                        className="w-full px-4 py-2 flex items-center gap-3 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
                     >
-                        <Reply className="w-3.5 h-3.5" /> Reply
+                        <Reply className="w-4 h-4 opacity-70" /> Reply
                     </button>
                     {contextMenu.message.is_outgoing && (
                         <button
@@ -1197,44 +1379,79 @@ export default function Chats() {
                                 setMessageInput(contextMenu.message.text || '');
                                 setContextMenu(null);
                             }}
-                            className="w-full px-3 py-1.5 flex items-center gap-2 text-xs text-[var(--color-text-primary)] hover:bg-[var(--color-accent)] hover:text-white transition-colors"
+                            className="w-full px-4 py-2 flex items-center gap-3 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
                         >
-                            <Edit3 className="w-3.5 h-3.5" /> Edit
+                            <Edit3 className="w-4 h-4 opacity-70" /> Edit
+                        </button>
+                    )}
+                    {contextMenu.message.has_media && (
+                        <button
+                            onClick={() => { /* Implementation for copy image would go here */ setContextMenu(null); }}
+                            className="w-full px-4 py-2 flex items-center gap-3 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
+                        >
+                            <ImageIcon className="w-4 h-4 opacity-70" /> Copy Image
                         </button>
                     )}
                     <button
+                        onClick={() => { navigator.clipboard.writeText(contextMenu.message.text || ''); setContextMenu(null); }}
+                        className="w-full px-4 py-2 flex items-center gap-3 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
+                    >
+                        <Copy className="w-4 h-4 opacity-70" /> Copy Text
+                    </button>
+                    <button
+                        onClick={() => { /* Implementation for copy link */ setContextMenu(null); }}
+                        className="w-full px-4 py-2 flex items-center gap-3 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
+                    >
+                        <ExternalLink className="w-4 h-4 opacity-70" /> Copy Message Link
+                    </button>
+                    <button
                         onClick={() => { handlePinMessage(contextMenu.message); setContextMenu(null); }}
-                        className="w-full px-3 py-1.5 flex items-center gap-2 text-xs text-[var(--color-text-primary)] hover:bg-[var(--color-accent)] hover:text-white transition-colors"
+                        className="w-full px-4 py-2 flex items-center gap-3 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
                     >
-                        <Pin className="w-3.5 h-3.5" /> {contextMenu.message.is_pinned ? 'Unpin' : 'Pin'}
+                        <Pin className="w-4 h-4 opacity-70" /> {contextMenu.message.is_pinned ? 'Unpin' : 'Pin'}
+                    </button>
+                    {contextMenu.message.has_media && (
+                        <a
+                            href={getMediaDownloadUrl(contextMenu.message.chat_id, contextMenu.message.id)}
+                            download
+                            onClick={() => setContextMenu(null)}
+                            className="w-full px-4 py-2 flex items-center gap-3 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
+                        >
+                            <Download className="w-4 h-4 opacity-70" /> Download
+                        </a>
+                    )}
+                    <button
+                        onClick={() => { /* Implementation for forward */ setContextMenu(null); }}
+                        className="w-full px-4 py-2 flex items-center gap-3 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
+                    >
+                        <Share2 className="w-4 h-4 opacity-70" /> Forward
                     </button>
                     <button
-                        onClick={() => { navigator.clipboard.writeText(contextMenu.message.id.toString()); setContextMenu(null); }}
-                        className="w-full px-3 py-1.5 flex items-center gap-2 text-xs text-[var(--color-text-primary)] hover:bg-[var(--color-accent)] hover:text-white transition-colors"
+                        onClick={() => { /* Implementation for select */ setContextMenu(null); }}
+                        className="w-full px-4 py-2 flex items-center gap-3 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
                     >
-                        <Copy className="w-3.5 h-3.5" /> Copy ID
+                        <MousePointer2 className="w-4 h-4 opacity-70" /> Select
                     </button>
                     <button
-                        onClick={() => {
-                            if (contextMenu.message.raw_json) {
-                                try {
-                                    setShowRawJson(JSON.stringify(JSON.parse(contextMenu.message.raw_json), null, 2));
-                                } catch (e) {
-                                    setShowRawJson(contextMenu.message.raw_json);
-                                }
-                            }
-                            setContextMenu(null);
-                        }}
-                        className="w-full px-3 py-1.5 flex items-center gap-2 text-xs text-[var(--color-text-primary)] hover:bg-[var(--color-accent)] hover:text-white transition-colors"
+                        onClick={() => { /* Implementation for report */ setContextMenu(null); }}
+                        className="w-full px-4 py-2 flex items-center gap-3 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
                     >
-                        <Code className="w-3.5 h-3.5" /> View Raw
+                        <Flag className="w-4 h-4 opacity-70" /> Report
                     </button>
+                    {isDevMode && (
+                        <button
+                            onClick={() => { setShowRawJson(JSON.stringify(contextMenu.message, null, 2)); setContextMenu(null); }}
+                            className="w-full px-4 py-2 flex items-center gap-3 text-sm text-[var(--color-accent)] hover:bg-[var(--color-bg-hover)] transition-colors border-t border-[var(--color-border)]"
+                        >
+                            <Code className="w-4 h-4 opacity-70" /> View Raw JSON
+                        </button>
+                    )}
                     <div className="h-px bg-[var(--color-border)] my-1" />
                     <button
                         onClick={() => { handleDeleteMessage(contextMenu.message); setContextMenu(null); }}
-                        className="w-full px-3 py-1.5 flex items-center gap-2 text-xs text-red-500 hover:bg-red-500 hover:text-white transition-colors"
+                        className="w-full px-4 py-2 flex items-center gap-3 text-sm text-red-500 hover:bg-black/10 transition-colors"
                     >
-                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                        <Trash2 className="w-4 h-4" /> Delete
                     </button>
                 </div>
             )}
